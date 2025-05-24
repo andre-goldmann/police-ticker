@@ -1,0 +1,20 @@
+<div class="chat-container">
+  <div class="messages">
+    <div *ngFor="let msg of messages" [ngClass]="msg.role">
+      <span class="role">{{ msg.role === 'user' ? 'You' : 'AI' }}:</span>
+      <span class="content">{{ msg.content }}</span>
+    </div>
+  </div>
+  <form (ngSubmit)="sendMessage()" class="input-row">
+    <input
+      [(ngModel)]="userInput"
+      name="userInput"
+      [disabled]="loading"
+      placeholder="Type your message..."
+      autocomplete="off"
+    />
+    <button type="submit" [disabled]="loading || !userInput.trim()">Send</button>
+  </form>
+  <div *ngIf="loading" class="loading">Thinking...</div>
+  <div *ngIf="error" class="error">{{ error }}</div>
+</div>

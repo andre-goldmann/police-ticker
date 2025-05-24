@@ -1,0 +1,108 @@
+<div class="rss-feed-container">
+  <div class="feed-selection">
+    <h3>Police RSS Feed Selector</h3>
+    <div *ngIf="loadingFeeds" class="loading-feeds">Loading available feeds...</div>
+    <form (ngSubmit)="fetchFeed()" class="input-row">
+      <div class="select-container">
+        <select [(ngModel)]="selectedFeed" name="feedSelect" [disabled]="loadingFeeds">
+          <option [ngValue]="null">Select a German police feed...</option>
+          <option *ngFor="let feed of policeFeeds" [ngValue]="feed">
+            {{ feed.name }} - {{ feed.description }}
+          </option>
+        </select>
+      </div>
+      <button type="submit" [disabled]="loading || !selectedFeed">Load Selected Feed</button>
+    </form>
+  </div>
+  
+  <div *ngIf="loading" class="loading">
+    <div class="spinner"></div>
+    <span>Loading feed items...</span>
+  </div>
+  
+  <div *ngIf="error" class="error">
+    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <circle cx="12" cy="12" r="10"></circle>
+      <line x1="12" y1="8" x2="12" y2="12"></line>
+      <line x1="12" y1="16" x2="12.01" y2="16"></line>
+    </svg>
+    {{ error }}
+  </div>
+  <div *ngIf="selectedFeed && feedItems.length" class="feed-info">
+    <h3>{{ selectedFeed.name }}</h3>
+    <p>{{ selectedFeed.description }}</p>
+    <div class="feed-meta">
+      <span>{{ feedItems.length }} item(s)</span>
+    </div>
+  </div>
+  
+  <ul *ngIf="feedItems.length" class="feed-items">
+    <li *ngFor="let item of feedItems; let i = index" [class.selected]="selectedIndex === i">
+      <a href="#" (click)="showDetails(i, $event)" class="feed-title">
+        {{ item.title }}
+        <small class="feed-indicator" *ngIf="selectedIndex === i">▼</small>
+        <small class="feed-indicator" *ngIf="selectedIndex !== i">▶</small>
+      </a>
+      <div class="pub-date">
+        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="10"></circle>
+          <polyline points="12 6 12 12 16 14"></polyline>
+        </svg>
+        {{ item.pubDate }}
+      </div>
+      <div *ngIf="selectedIndex === i" class="details">
+        <div class="description" [innerHTML]="item.description"></div>
+        <a [href]="item.link" target="_blank" class="read-original">
+          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
+            <polyline points="15 3 21 3 21 9"></polyline>
+            <line x1="10" y1="14" x2="21" y2="3"></line>
+          </svg>
+          Read original article
+        </a>        <div class="openrouter-response" *ngIf="openrouterResponse">
+          <hr />
+          <strong>
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="10"></circle>
+              <line x1="12" y1="16" x2="12" y2="12"></line>
+              <line x1="12" y1="8" x2="12.01" y2="8"></line>
+            </svg>
+            AI Summary/Analysis:
+          </strong>
+          <div [innerHTML]="openrouterResponse" [class.loading-response]="openrouterResponse === 'Loading AI analysis...'"></div>
+        </div>
+        
+        <!-- Feed Analysis Section (now within item details) -->
+        <div *ngIf="loadingAnalysis || feedAnalysis" class="feed-analysis">
+          <hr />
+          <strong>
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="10"></circle>
+              <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
+              <line x1="12" y1="17" x2="12.01" y2="17"></line>
+            </svg>
+            Content Analysis:
+          </strong>
+          <div *ngIf="loadingAnalysis" class="loading-analysis">
+            <div class="spinner"></div>
+            <span>Analyzing content...</span>
+          </div>
+          <div *ngIf="feedAnalysis && !loadingAnalysis" class="analysis-content">
+            <div [innerHTML]="feedAnalysis"></div>
+          </div>
+        </div>
+      </div>
+    </li>
+  </ul>
+  
+  <div *ngIf="!loading && !feedItems.length && !error" class="empty">
+    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+      <polyline points="14 2 14 8 20 8"></polyline>
+      <line x1="16" y1="13" x2="8" y2="13"></line>
+      <line x1="16" y1="17" x2="8" y2="17"></line>
+      <polyline points="10 9 9 9 8 9"></polyline>
+    </svg>
+    <p>No feed items loaded. Select a feed and click "Load Selected Feed" to get started.</p>
+  </div>
+</div>
