@@ -1,14 +1,9 @@
 import { AngularAppEngine, createRequestHandler } from '@angular/ssr'
 import { getContext } from '@netlify/angular-runtime/app-engine.js'
-import Cerebras from '@cerebras/cerebras_cloud_sdk';
 import { OpenRouterClient } from './openrouter-client';
 require('dotenv').config();
 
 const angularAppEngine = new AngularAppEngine();
-
-const cerebras = new Cerebras({
-  apiKey: process.env['CEREBRAS_API_KEY'],
-});
 
 const openrouter = new OpenRouterClient();
 
@@ -17,7 +12,7 @@ export async function netlifyAppEngineHandler(request: Request): Promise<Respons
   const url = new URL(request.url);
   const pathname = url.pathname;
 
-  // Cerebral chat endpoint
+  // Chat endpoint (formerly Cerebral chat, now using OpenRouter)
   if (pathname === '/api/cerebral-chat' && request.method === 'POST') {
     try {
       const body = await request.json();
@@ -30,12 +25,13 @@ export async function netlifyAppEngineHandler(request: Request): Promise<Respons
         return Response.json({ error: 'Missing model' }, { status: 400 });
       }
       
-      console.log('Cerebral chat request:', { messages, model, options });
+      console.log('Chat request:', { messages, model, options });
       
-      const chatResponse = await cerebras.chat.completions.create({ messages, model, ...options });
+      // Use OpenRouter instead of Cerebras
+      const chatResponse = await openrouter.generateCompletion(messages, model);
       return Response.json(chatResponse);
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Cerebras chat error';
+      const message = error instanceof Error ? error.message : 'Chat error';
       return Response.json({ error: message }, { status: 500 });
     }
   }
