@@ -7,6 +7,7 @@
     "build": "ng build",
     "watch": "ng build --watch --configuration development",
     "test": "ng test",
+    "test:server": "tsc -p tsconfig.server-tests.json && cd node_modules/.server-test-build && node --test server-tests/custom-rss.test.js",
     "serve:ssr:police-ticker": "node dist/police-ticker/server/server.mjs"
   },
   "private": true,

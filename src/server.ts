@@ -1,6 +1,7 @@
 import { AngularAppEngine, createRequestHandler } from '@angular/ssr'
 import { getContext } from '@netlify/angular-runtime/app-engine.js'
 import { OpenRouterClient } from './openrouter-client';
+import { ensurePublicHost, validateCustomRssUrl } from './custom-rss-url-guard';
 require('dotenv').config();
 
 const angularAppEngine = new AngularAppEngine();
@@ -84,11 +85,16 @@ export async function netlifyAppEngineHandler(request: Request): Promise<Respons
 
       console.log(`Fetching custom RSS feed: ${urlParam}`);
 
-      // Validate URL format
-      try {
-        new URL(urlParam);
-      } catch (e) {
-        return Response.json({ error: 'Invalid URL format' }, { status: 400 });
+      // Validate URL format and scheme (only http/https may be fetched)
+      const urlCheck = validateCustomRssUrl(urlParam);
+      if (!urlCheck.ok) {
+        return Response.json({ error: urlCheck.error }, { status: 400 });
+      }
+
+      // Resolve the hostname and reject private, loopback, and link-local targets
+      const hostCheck = await ensurePublicHost(urlCheck.url);
+      if (!hostCheck.ok) {
+        return Response.json({ error: hostCheck.error }, { status: 400 });
       }
 
       // Read and parse the RSS feed
