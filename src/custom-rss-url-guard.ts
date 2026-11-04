@@ -126,11 +126,31 @@ function isRestrictedIpv6(address: string): boolean {
   if (value === null) {
     return false;
   }
-  return (
+  if (
     value === IPV6_LOOPBACK ||
     (value >= IPV6_UNIQUE_LOCAL_MIN && value <= IPV6_UNIQUE_LOCAL_MAX) ||
     (value >= IPV6_LINK_LOCAL_MIN && value <= IPV6_LINK_LOCAL_MAX)
-  );
+  ) {
+    return true;
+  }
+  // IPv4-mapped (::ffff:a.b.c.d) and IPv4-compatible (::a.b.c.d) forms embed an
+  // IPv4 address in their low 32 bits; it must pass the IPv4 restrictions too.
+  const embeddedIpv4 = embeddedIpv4Of(value);
+  return embeddedIpv4 !== null && isRestrictedIpv4(embeddedIpv4);
+}
+
+/**
+ * Returns the dotted quad embedded in an IPv4-mapped or IPv4-compatible IPv6
+ * address, or null when the address does not embed an IPv4 address.
+ */
+function embeddedIpv4Of(value: bigint): string | null {
+  const high = value >> 32n;
+  if (high !== 0n && high !== 0xffffn) {
+    return null;
+  }
+  const ipv4 = value & 0xffffffffn;
+  const octet = (shift: bigint) => ((ipv4 >> shift) & 0xffn).toString();
+  return `${octet(24n)}.${octet(16n)}.${octet(8n)}.${octet(0n)}`;
 }
 
 function parseIpv6(address: string): bigint | null {

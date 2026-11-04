@@ -98,7 +98,10 @@ describe('RssFeedComponent custom feeds', () => {
       setCustomUrl(CUSTOM_URL);
       submit();
 
-      http.expectOne(CUSTOM_REQUEST);
+      const request = http.expectOne(CUSTOM_REQUEST);
+      expect(request.request.method).toBe('GET');
+      request.flush(TWO_ITEMS);
+      fixture.detectChanges();
     });
 
     it('renders exactly the returned items in the feed items list', () => {
@@ -131,7 +134,8 @@ describe('RssFeedComponent custom feeds', () => {
       setCustomUrl(CUSTOM_URL);
       submit();
 
-      http.expectOne(CUSTOM_REQUEST);
+      http.expectOne(CUSTOM_REQUEST).flush(TWO_ITEMS);
+      fixture.detectChanges();
       expect(errorText()).not.toMatch(/Please select a feed first/);
     });
 
@@ -141,7 +145,9 @@ describe('RssFeedComponent custom feeds', () => {
       setCustomUrl(CUSTOM_URL);
       submit();
 
-      http.expectOne(CUSTOM_REQUEST);
+      http.expectOne(CUSTOM_REQUEST).flush(TWO_ITEMS);
+      fixture.detectChanges();
+      expect(component.selectedFeed.name).toBe('example.com');
       http.expectNone(`/api/custom-rss?url=${encodeURIComponent(PRESET_FEEDS[0].url)}`);
     });
 

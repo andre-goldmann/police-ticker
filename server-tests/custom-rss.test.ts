@@ -148,6 +148,25 @@ describe('/api/custom-rss', () => {
       assert.equal(readRssFeedCalls.length, 0);
     });
 
+    it('responds 400 and does not call readRssFeed when the host resolves to an IPv4-mapped or IPv4-compatible IPv6 address', async () => {
+      const cases: Array<[string, Array<{ address: string; family: number }>]> = [
+        ['http://mappedprivate.example.com/feed.xml', [{ address: '::ffff:192.168.0.1', family: 6 }]],
+        ['http://mappedloopback.example.com/feed.xml', [{ address: '::ffff:127.0.0.1', family: 6 }]],
+        ['http://mappedten.example.com/feed.xml', [{ address: '::ffff:10.0.0.1', family: 6 }]],
+        ['http://compatibleloopback.example.com/feed.xml', [{ address: '::127.0.0.1', family: 6 }]],
+      ];
+
+      for (const [feedUrl, addresses] of cases) {
+        stubLookup(resolvesTo(addresses));
+        const response = await callHandler(feedUrl);
+
+        assert.equal(response.status, 400, `${feedUrl} should be rejected`);
+        const body = await response.json();
+        assert.equal(typeof body.error, 'string');
+      }
+      assert.equal(readRssFeedCalls.length, 0);
+    });
+
     it('responds 400 with an error body and does not call readRssFeed when the hostname does not resolve', async () => {
       stubLookup(resolvesToNothing());
 
