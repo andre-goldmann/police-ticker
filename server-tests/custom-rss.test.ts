@@ -167,6 +167,25 @@ describe('/api/custom-rss', () => {
       assert.equal(readRssFeedCalls.length, 0);
     });
 
+    it('responds 400 and does not call readRssFeed when the host resolves to an unspecified address', async () => {
+      // 0.0.0.0 ("this network") and :: (IPv6 unspecified) reach loopback on
+      // Linux, so they are treated like the loopback targets above.
+      const cases: Array<[string, Array<{ address: string; family: number }>]> = [
+        ['http://0.0.0.0/feed.xml', [{ address: '0.0.0.0', family: 4 }]],
+        ['http://[::]/feed.xml', [{ address: '::', family: 6 }]],
+      ];
+
+      for (const [feedUrl, addresses] of cases) {
+        stubLookup(resolvesTo(addresses));
+        const response = await callHandler(feedUrl);
+
+        assert.equal(response.status, 400, `${feedUrl} should be rejected`);
+        const body = await response.json();
+        assert.equal(typeof body.error, 'string');
+      }
+      assert.equal(readRssFeedCalls.length, 0);
+    });
+
     it('responds 400 with an error body and does not call readRssFeed when the hostname does not resolve', async () => {
       stubLookup(resolvesToNothing());
 

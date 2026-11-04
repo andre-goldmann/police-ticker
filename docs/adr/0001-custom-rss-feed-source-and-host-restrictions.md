@@ -20,12 +20,16 @@ reach services inside the deployment network (SSRF).
   is introduced, `readRssFeed()` and the response shape are unchanged, and the
   preset feeds keep flowing through the same path as before.
 - `/api/custom-rss` accepts only `http`/`https` URLs, and it accepts a URL
-  only when its hostname resolves and none of the resolved addresses is in a
-  private (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, fc00::/7), loopback
-  (127.0.0.0/8, ::1), or link-local (169.254.0.0/16, fe80::/10) range.
-  Rejected requests get a 400 response with a JSON `error` body, and
-  `readRssFeed()` is never called for them. DNS resolution is injected into
-  the guard, so tests can stub it without live network calls.
+  only when its hostname resolves and none of the resolved addresses is in an
+  unspecified (`0.0.0.0/8`, `::`), private (10.0.0.0/8, 172.16.0.0/12,
+  192.168.0.0/16, fc00::/7), loopback (127.0.0.0/8, ::1), or link-local
+  (169.254.0.0/16, fe80::/10) range. The unspecified addresses (`0.0.0.0` and
+  `::`) are included because a connection to them reaches loopback on Linux.
+  IPv4-mapped and IPv4-compatible IPv6 forms (e.g. `::ffff:192.168.0.1`) are
+  checked by extracting their embedded IPv4 address and applying the same
+  IPv4 ranges. Rejected requests get a 400 response with a JSON `error` body,
+  and `readRssFeed()` is never called for them. DNS resolution is injected
+  into the guard, so tests can stub it without live network calls.
 
 ## Consequences
 

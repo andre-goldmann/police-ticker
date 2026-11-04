@@ -18,6 +18,7 @@ export type HostCheck = { ok: true } | { ok: false; error: string };
 
 /** IPv4 ranges (as [min, max] integers) that must not be requested. */
 const RESTRICTED_IPV4_RANGES: Array<[number, number]> = [
+  [0x00000000, 0x00ffffff], // 0.0.0.0/8 "this network" (reaches loopback on Linux)
   [0x7f000000, 0x7fffffff], // 127.0.0.0/8 loopback
   [0x0a000000, 0x0affffff], // 10.0.0.0/8 private
   [0xac100000, 0xac1fffff], // 172.16.0.0/12 private
@@ -25,6 +26,7 @@ const RESTRICTED_IPV4_RANGES: Array<[number, number]> = [
   [0xa9fe0000, 0xa9feffff], // 169.254.0.0/16 link-local
 ];
 
+const IPV6_UNSPECIFIED = 0n;
 const IPV6_LOOPBACK = 1n;
 const IPV6_UNIQUE_LOCAL_MIN = 0xfc000000000000000000000000000000n; // fc00::/7
 const IPV6_UNIQUE_LOCAL_MAX = 0xfdffffffffffffffffffffffffffffffn;
@@ -127,6 +129,7 @@ function isRestrictedIpv6(address: string): boolean {
     return false;
   }
   if (
+    value === IPV6_UNSPECIFIED ||
     value === IPV6_LOOPBACK ||
     (value >= IPV6_UNIQUE_LOCAL_MIN && value <= IPV6_UNIQUE_LOCAL_MAX) ||
     (value >= IPV6_LINK_LOCAL_MIN && value <= IPV6_LINK_LOCAL_MAX)
