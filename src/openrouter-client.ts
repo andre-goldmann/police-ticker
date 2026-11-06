@@ -48,6 +48,9 @@ function createPinnedConnector(addresses: ResolvedAddress[], servername: string)
   });
 }
 
+// `new UndiciClient(feedUrl.origin, …)` is intentional: the client pins TCP to the
+// guard-resolved addresses while `undiciFetch(url, …)` still uses the full URL for
+// path, query, Host, and (via servername) TLS SNI.
 function createPinnedRssFetchClient(feedUrl: URL, addresses: ResolvedAddress[]): UndiciClient {
   const servername = feedUrl.hostname.startsWith('[')
     ? feedUrl.hostname.slice(1, -1)
@@ -290,7 +293,7 @@ export class OpenRouterClient {
    * Sends a chat completion request with tools support to OpenRouter API
    * @param messages Array of message objects
    * @param tools Array of tool definitions
-   * @param model The model to use for the request
+   * @param model The model to use for the completion
    * @param parallelToolCalls Whether to allow parallel tool calls
    * @returns The API response with tool calls if applicable
    */
@@ -793,7 +796,7 @@ export class OpenRouterClient {
         ];
 
         // Send the follow-up request without tools (we've already executed them)
-        return await this.generateCompletion(followUpMessages, "meta-llama/llama-4-scout-17b-16e-instruct");
+        return await this.generateCompletion(followUpMessages, "meta-llama/llama-3.3-70b-instruct");
       }
     }
 

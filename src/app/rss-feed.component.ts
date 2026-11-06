@@ -44,7 +44,8 @@ export class RssFeedComponent implements OnInit {
   defaultFeed: PoliceFeed = {
     name: 'Polizei Sachsen',
     url: 'https://www.polizei.sachsen.de/de/presse_rss_pdl.xml',
-    description: 'Official police feed from Saxony'  };
+    description: 'Official police feed from Saxony',
+  };
 
   constructor(private http: HttpClient) {}
 
@@ -55,7 +56,8 @@ export class RssFeedComponent implements OnInit {
   get canSubmitFeed(): boolean {
     return !this.loading && (this.selectedFeed !== null || this.customFeedUrl.trim() !== '');
   }
-    ngOnInit() {
+
+  ngOnInit() {
     // Load the list of police feeds when component initializes
     this.loadPoliceFeeds();
   }
@@ -80,7 +82,9 @@ export class RssFeedComponent implements OnInit {
         this.loadingFeeds = false;
       }
     });
-  }  fetchFeed() {
+  }
+
+  fetchFeed() {
     const customUrl = this.customFeedUrl.trim();
     if (customUrl) {
       if (!isValidHttpUrl(customUrl)) {
@@ -219,7 +223,9 @@ export class RssFeedComponent implements OnInit {
         this.loadingAnalysis = false;
       }
     });
-  }  showDetails(index: number, event: Event) {
+  }
+
+  showDetails(index: number, event: Event) {
     event.preventDefault();
 
     // If clicking on the currently selected item, toggle it off
