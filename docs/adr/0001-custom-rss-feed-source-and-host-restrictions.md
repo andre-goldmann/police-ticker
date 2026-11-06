@@ -29,10 +29,14 @@ reach services inside the deployment network (SSRF).
   checked by extracting their embedded IPv4 address and applying the same
   IPv4 ranges. Rejected requests get a 400 response with a JSON `error` body,
   and `readRssFeed()` is never called for them. DNS resolution is injected
-  into the guard, so tests can stub it without live network calls. The fetch
-  inside `readRssFeed()` rejects redirects (`redirect: 'error'`): the guard
-  validates only the requested URL, so a 3xx to an internal target must not
-  be followed.
+  into the guard, so tests can stub it without live network calls.
+- After the guard passes, the outbound feed fetch connects to **only** those
+  accepted resolved addresses (Undici `fetch` with a pinned `lookup` and the
+  original URL string unchanged), so `Host` and TLS SNI stay aligned with the
+  user-supplied hostname while a second DNS resolution cannot rebind the
+  connection to a different address. The fetch still rejects redirects
+  (`redirect: 'error'`): the guard validates only the requested URL, so a 3xx
+  to an internal target must not be followed.
 
 ## Consequences
 
@@ -44,6 +48,7 @@ reach services inside the deployment network (SSRF).
   IPs and IPv4-mapped IPv6 forms are covered too, and redirect responses are
   rejected instead of followed, so a passing URL cannot bounce the fetch to
   an internal target.
-- A hostname whose DNS changes between validation and fetch is out of scope;
-  guarding against that (TOCTOU pinning) would require fetching through the
-  resolved addresses themselves.
+- DNS rebinding between validation and connect is mitigated: the TCP connection
+  uses the same addresses the guard already accepted, without trusting a second
+  resolver pass for that hostname.
+

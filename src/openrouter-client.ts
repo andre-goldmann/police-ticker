@@ -1,5 +1,62 @@
 import { parseStringPromise } from 'xml2js';
 import * as FlexSearch from 'flexsearch';
+import type { ResolvedAddress } from './custom-rss-url-guard';
+import type { Client } from 'undici';
+import { buildConnector, Client as UndiciClient, fetch as undiciFetch } from 'undici';
+
+function createPinnedConnector(addresses: ResolvedAddress[], servername: string) {
+  const pinnedHosts = addresses.map((entry) =>
+    entry.family === 6 ? `[${entry.address}]` : entry.address,
+  );
+
+  return buildConnector({
+    keepAlive: true,
+    ...(pinnedHosts.length === 1
+      ? {
+          lookup: (_hostname, opts, cb) => {
+            if (opts.all) {
+              cb(
+                null,
+                pinnedHosts.map((_host, index) => ({
+                  address: addresses[index]!.address,
+                  family: addresses[index]!.family,
+                })),
+              );
+            } else {
+              cb(null, pinnedHosts[0]!, addresses[0]!.family);
+            }
+          },
+        }
+      : {
+          lookup: (_hostname, opts, cb) => {
+            if (!opts.all) {
+              const index = 0;
+              cb(null, pinnedHosts[index]!, addresses[index]!.family);
+              return;
+            }
+
+            cb(
+              null,
+              pinnedHosts.map((_host, index) => ({
+                address: addresses[index]!.address,
+                family: addresses[index]!.family,
+              })),
+            );
+          },
+        }),
+    servername,
+  });
+}
+
+function createPinnedRssFetchClient(feedUrl: URL, addresses: ResolvedAddress[]): UndiciClient {
+  const servername = feedUrl.hostname.startsWith('[')
+    ? feedUrl.hostname.slice(1, -1)
+    : feedUrl.hostname;
+
+  return new UndiciClient(feedUrl.origin, {
+    connect: createPinnedConnector(addresses, servername),
+  });
+}
 
 export interface OpenRouterResponse {
   choices: Array<{
@@ -517,23 +574,33 @@ export class OpenRouterClient {
    * @param url The RSS feed URL.
    * @returns An array of RSS feed items (title, link, pubDate, description, etc).
    */
-  async readRssFeed(url: string): Promise<Array<{ title: string; link: string; pubDate: string; description: string }>> {
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 8000); // 8 second timeout
+  async readRssFeed(
+    url: string,
+    resolvedAddresses?: ResolvedAddress[],
+  ): Promise<Array<{ title: string; link: string; pubDate: string; description: string }>> {
+    const feedUrl = new URL(url);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 8000); // 8 second timeout
 
-      const response = await fetch(url, {
+    let pinnedClient: Client | undefined;
+
+    try {
+      if (resolvedAddresses && resolvedAddresses.length > 0) {
+        pinnedClient = createPinnedRssFetchClient(feedUrl, resolvedAddresses);
+      }
+
+      const response = await undiciFetch(url, {
         method: 'GET',
         // Do not follow redirects: only this URL was host-checked, a 3xx
         // could point the fetch at an internal (private/loopback) target.
         redirect: 'error',
         signal: controller.signal,
         headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-        }
+          'User-Agent':
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+        },
+        dispatcher: pinnedClient,
       });
-
-      clearTimeout(timeoutId);
 
       if (!response.ok) {
         throw new Error(`Failed to fetch RSS feed (${response.status}): ${await response.text()}`);
@@ -550,7 +617,7 @@ export class OpenRouterClient {
         explicitArray: false,
         trim: true,
         normalizeTags: true,
-        normalize: true
+        normalize: true,
       });
 
       // Handle different RSS formats
@@ -573,14 +640,14 @@ export class OpenRouterClient {
       const itemArray = Array.isArray(items) ? items : [items];
 
       // Map different formats to our consistent structure
-      return itemArray.map(item => {
+      return itemArray.map((item) => {
         // Handle Atom format differently
         if (parsed.feed && parsed.feed.entry) {
           return {
             title: item.title?._?.trim() || item.title || '',
             link: item.link?.href || item.link || '',
             pubDate: item.published || item.updated || '',
-            description: item.summary || item.content || ''
+            description: item.summary || item.content || '',
           };
         }
 
@@ -594,9 +661,13 @@ export class OpenRouterClient {
     } catch (error) {
       console.error(`Error fetching/parsing RSS feed from ${url}:`, error);
       throw error;
+    } finally {
+      clearTimeout(timeoutId);
+      if (pinnedClient) {
+        await pinnedClient.close();
+      }
     }
   }
-
 
   async getGermanPoliceRssFeeds(): Promise<Array<{ name: string; url: string; description: string }>> {
     //try {

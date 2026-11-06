@@ -97,8 +97,8 @@ export async function netlifyAppEngineHandler(request: Request): Promise<Respons
         return Response.json({ error: hostCheck.error }, { status: 400 });
       }
 
-      // Read and parse the RSS feed
-      const items = await openrouter.readRssFeed(urlParam);
+      // Read and parse the RSS feed, pinning TCP to the addresses the guard accepted
+      const items = await openrouter.readRssFeed(urlParam, hostCheck.addresses);
       return Response.json(items);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Custom RSS feed error';

@@ -14,7 +14,12 @@ const defaultLookup: HostLookup = (hostname, options) => dnsPromises.lookup(host
 
 export type UrlCheck = { ok: true; url: URL } | { ok: false; error: string };
 
-export type HostCheck = { ok: true } | { ok: false; error: string };
+/** Resolved addresses from `ensurePublicHost`, safe to pin for the outbound fetch. */
+export type ResolvedAddress = { address: string; family: number };
+
+export type HostCheck =
+  | { ok: true; addresses: ResolvedAddress[] }
+  | { ok: false; error: string };
 
 /** IPv4 ranges (as [min, max] integers) that must not be requested. */
 const RESTRICTED_IPV4_RANGES: Array<[number, number]> = [
@@ -83,7 +88,7 @@ export async function ensurePublicHost(
     };
   }
 
-  return { ok: true };
+  return { ok: true, addresses };
 }
 
 function isRestrictedAddress(address: string, family: number): boolean {

@@ -13,6 +13,7 @@ import { afterEach, beforeEach, describe, it } from 'node:test';
 
 import { netlifyAppEngineHandler } from '../src/server';
 import { OpenRouterClient } from '../src/openrouter-client';
+import type { ResolvedAddress } from '../src/custom-rss-url-guard';
 
 type TestLookup = (
   hostname: string,
@@ -22,7 +23,7 @@ type TestLookup = (
 const originalLookup = dns.promises.lookup;
 const originalReadRssFeed = OpenRouterClient.prototype.readRssFeed;
 
-let readRssFeedCalls: string[];
+let readRssFeedCalls: Array<{ url: string; addresses?: ResolvedAddress[] }>;
 
 const rssItems = [
   {
@@ -57,8 +58,11 @@ async function callHandler(feedUrl: string): Promise<Response> {
 
 beforeEach(() => {
   readRssFeedCalls = [];
-  OpenRouterClient.prototype.readRssFeed = async (url: string) => {
-    readRssFeedCalls.push(url);
+  OpenRouterClient.prototype.readRssFeed = async (
+    url: string,
+    addresses?: ResolvedAddress[],
+  ) => {
+    readRssFeedCalls.push({ url, addresses });
     return rssItems;
   };
 });
@@ -93,7 +97,9 @@ describe('/api/custom-rss', () => {
       const response = await callHandler(target);
 
       assert.equal(response.status, 200);
-      assert.deepEqual(readRssFeedCalls, [target]);
+      assert.deepEqual(readRssFeedCalls, [
+        { url: target, addresses: [{ address: '153.92.100.206', family: 4 }] },
+      ]);
       assert.deepEqual(await response.json(), rssItems);
     });
   });
@@ -204,7 +210,10 @@ describe('/api/custom-rss', () => {
       const response = await callHandler(target);
 
       assert.equal(response.status, 200);
-      assert.deepEqual(readRssFeedCalls, [target]);
+      assert.deepEqual(readRssFeedCalls, [
+        { url: target, addresses: [{ address: '153.92.100.206', family: 4 }] },
+      ]);
     });
   });
 });
+
