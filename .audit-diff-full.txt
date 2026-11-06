@@ -1,0 +1,1873 @@
+diff --git a/CONTEXT.md b/CONTEXT.md
+new file mode 100644
+index 0000000..8aeeb21
+--- /dev/null
++++ b/CONTEXT.md
+@@ -0,0 +1,17 @@
++# CONTEXT
++
++Glossary for the PoliceTicker feed selector.
++
++## Preset feed
++
++A feed served by `/api/german-police-feeds` or the built-in default
++"Polizei Sachsen" feed. Preset feeds make up the feed selector dropdown and
++are loaded through `/api/custom-rss` like any other feed.
++
++## Custom feed
++
++A user-pasted RSS feed URL, loaded through `/api/custom-rss`. A custom feed is
++not part of `policeFeeds` (it never appears in the dropdown and is not
++persisted); it is ephemeral to the current browser session and only
++`http`/`https` URLs whose host is not private, loopback, or link-local are
++accepted.
+diff --git a/docs/adr/0001-custom-rss-feed-source-and-host-restrictions.md b/docs/adr/0001-custom-rss-feed-source-and-host-restrictions.md
+new file mode 100644
+index 0000000..b67d093
+--- /dev/null
++++ b/docs/adr/0001-custom-rss-feed-source-and-host-restrictions.md
+@@ -0,0 +1,54 @@
++# 0001 — Custom RSS feed source and host restrictions
++
++## Status
++
++Accepted
++
++## Context
++
++Users want to load arbitrary RSS feeds into the PoliceTicker feed selector,
++alongside the preset German police feeds. The server already exposes
++`/api/custom-rss`, which fetches and parses whatever URL it is handed. Left
++unguarded, that endpoint lets the server be used as a proxy against internal
++targets: non-HTTP schemes such as `file://` can point at local files, and
++hostnames that resolve to private, loopback, or link-local addresses can
++reach services inside the deployment network (SSRF).
++
++## Decision
++
++- Custom feeds ride the existing `/api/custom-rss` endpoint. No new endpoint
++  is introduced, `readRssFeed()` and the response shape are unchanged, and the
++  preset feeds keep flowing through the same path as before.
++- `/api/custom-rss` accepts only `http`/`https` URLs, and it accepts a URL
++  only when its hostname resolves and none of the resolved addresses is in an
++  unspecified (`0.0.0.0/8`, `::`), private (10.0.0.0/8, 172.16.0.0/12,
++  192.168.0.0/16, fc00::/7), loopback (127.0.0.0/8, ::1), or link-local
++  (169.254.0.0/16, fe80::/10) range. The unspecified addresses (`0.0.0.0` and
++  `::`) are included because a connection to them reaches loopback on Linux.
++  IPv4-mapped and IPv4-compatible IPv6 forms (e.g. `::ffff:192.168.0.1`) are
++  checked by extracting their embedded IPv4 address and applying the same
++  IPv4 ranges. Rejected requests get a 400 response with a JSON `error` body,
++  and `readRssFeed()` is never called for them. DNS resolution is injected
++  into the guard, so tests can stub it without live network calls.
++- After the guard passes, the outbound feed fetch connects to **only** those
++  accepted resolved addresses (Undici `fetch` with a pinned `lookup` and the
++  original URL string unchanged), so `Host` and TLS SNI stay aligned with the
++  user-supplied hostname while a second DNS resolution cannot rebind the
++  connection to a different address. The fetch still rejects redirects
++  (`redirect: 'error'`): the guard validates only the requested URL, so a 3xx
++  to an internal target must not be followed.
++
++## Consequences
++
++- The feed selector accepts any pasted `http`/`https` feed URL; invalid
++  schemes and internal hosts are rejected by the server with a 400 whose
++  message surfaces through the existing client error banner.
++- The `file://` and fetch-internal-host vectors for this endpoint are closed;
++  hosts are checked at request time over every resolved address, so literal
++  IPs and IPv4-mapped IPv6 forms are covered too, and redirect responses are
++  rejected instead of followed, so a passing URL cannot bounce the fetch to
++  an internal target.
++- DNS rebinding between validation and connect is mitigated: the TCP connection
++  uses the same addresses the guard already accepted, without trusting a second
++  resolver pass for that hostname.
++
+diff --git a/package-lock.json b/package-lock.json
+index 64f4d4f..4e1048b 100644
+--- a/package-lock.json
++++ b/package-lock.json
+@@ -19,13 +19,14 @@
+         "@angular/platform-server": "^19.2.0",
+         "@angular/router": "^19.2.0",
+         "@angular/ssr": "^19.2.6",
+-        "@cerebras/cerebras_cloud_sdk": "^1.35.0",
++        "@netlify/angular-runtime": "^4.0.0",
+         "dotenv": "^16.5.0",
+         "express": "^4.18.2",
+         "flexsearch": "^0.8.204",
+         "rss-parser": "^3.13.0",
+         "rxjs": "~7.8.0",
+         "tslib": "^2.3.0",
++        "undici": "^6.29.1",
+         "xml2js": "^0.6.2",
+         "zone.js": "~0.15.0"
+       },
+@@ -2356,20 +2357,6 @@
+         "node": ">=6.9.0"
+       }
+     },
+-    "node_modules/@cerebras/cerebras_cloud_sdk": {
+-      "version": "1.35.0",
+-      "resolved": "https://registry.npmjs.org/@cerebras/cerebras_cloud_sdk/-/cerebras_cloud_sdk-1.35.0.tgz",
+-      "integrity": "sha512-bQ6KYHmcvudHJ1aLzqkeETn3Y071/8/zpcZho6g4pKZ+VluHvLmIG0buhrwF9qJY5WSLmXR/s4pruxVRmfV7yQ==",
+-      "dependencies": {
+-        "@types/node": "^18.11.18",
+-        "@types/node-fetch": "^2.6.4",
+-        "abort-controller": "^3.0.0",
+-        "agentkeepalive": "^4.2.1",
+-        "form-data-encoder": "1.7.2",
+-        "formdata-node": "^4.3.2",
+-        "node-fetch": "^2.6.7"
+-      }
+-    },
+     "node_modules/@colors/colors": {
+       "version": "1.5.0",
+       "resolved": "https://registry.npmjs.org/@colors/colors/-/colors-1.5.0.tgz",
+@@ -3780,6 +3767,52 @@
+         "node": ">= 10"
+       }
+     },
++    "node_modules/@netlify/angular-runtime": {
++      "version": "4.0.0",
++      "resolved": "https://registry.npmjs.org/@netlify/angular-runtime/-/angular-runtime-4.0.0.tgz",
++      "integrity": "sha512-VrFrzw0MbLWLCG853dJM5gHDg2uRMBWuedEb1DfLDNyja/dQnmQTMPE2ke9QTbebFA01T0aynM0aeU7DyinPOQ==",
++      "license": "MIT",
++      "dependencies": {
++        "@netlify/edge-functions": "^3.0.8",
++        "semver": "^7.8.0"
++      },
++      "engines": {
++        "node": "^22.22.0 || ^24.13.1 || >=26.0.0"
++      }
++    },
++    "node_modules/@netlify/angular-runtime/node_modules/semver": {
++      "version": "7.8.6",
++      "resolved": "https://registry.npmjs.org/semver/-/semver-7.8.6.tgz",
++      "integrity": "sha512-9lpSSU4Mly3mrtruwLs1eLK6+gzbzqeBFwRNjIjE+9LuDpWdYctrQlQ3ej1Ilgi7gknpsTRnPoLP8DpCHqHIJw==",
++      "license": "ISC",
++      "bin": {
++        "semver": "bin/semver.js"
++      },
++      "engines": {
++        "node": ">=10"
++      }
++    },
++    "node_modules/@netlify/edge-functions": {
++      "version": "3.0.8",
++      "resolved": "https://registry.npmjs.org/@netlify/edge-functions/-/edge-functions-3.0.8.tgz",
++      "integrity": "sha512-ml1oCDsRTTRmZS2nUj8XRD1b6+foEiZT3lPk7qQ4nv/jnxylHJ20ooPzPDH+cJmGjXFrMeR14/91W1o6D2ftBg==",
++      "license": "MIT",
++      "dependencies": {
++        "@netlify/types": "2.8.0"
++      },
++      "engines": {
++        "node": ">=18.0.0"
++      }
++    },
++    "node_modules/@netlify/types": {
++      "version": "2.8.0",
++      "resolved": "https://registry.npmjs.org/@netlify/types/-/types-2.8.0.tgz",
++      "integrity": "sha512-8/g0Pt6y6wXj5Ia5eeYLiXhRfWeqZXGXpGFeCiiQdUOem+FPtXdA4+YdGxqzWc7D0AvptKSO01KGeeVWHSu8Kg==",
++      "license": "MIT",
++      "engines": {
++        "node": "^18.14.0 || >=20"
++      }
++    },
+     "node_modules/@ngtools/webpack": {
+       "version": "19.2.13",
+       "resolved": "https://registry.npmjs.org/@ngtools/webpack/-/webpack-19.2.13.tgz",
+@@ -4962,19 +4995,11 @@
+       "version": "18.19.103",
+       "resolved": "https://registry.npmjs.org/@types/node/-/node-18.19.103.tgz",
+       "integrity": "sha512-hHTHp+sEz6SxFsp+SA+Tqrua3AbmlAw+Y//aEwdHrdZkYVRWdvWD3y5uPZ0flYOkgskaFWqZ/YGFm3FaFQ0pRw==",
++      "dev": true,
+       "dependencies": {
+         "undici-types": "~5.26.4"
+       }
+     },
+-    "node_modules/@types/node-fetch": {
+-      "version": "2.6.12",
+-      "resolved": "https://registry.npmjs.org/@types/node-fetch/-/node-fetch-2.6.12.tgz",
+-      "integrity": "sha512-8nneRWKCg3rMtF69nLQJnOYUcbafYeFSjqkw3jCRLsqkWFlHaoQrr5mXmofFGOx3DKn7UfmBMyov8ySvLRVldA==",
+-      "dependencies": {
+-        "@types/node": "*",
+-        "form-data": "^4.0.0"
+-      }
+-    },
+     "node_modules/@types/node-forge": {
+       "version": "1.3.11",
+       "resolved": "https://registry.npmjs.org/@types/node-forge/-/node-forge-1.3.11.tgz",
+@@ -5244,17 +5269,6 @@
+         "node": "^18.17.0 || >=20.5.0"
+       }
+     },
+-    "node_modules/abort-controller": {
+-      "version": "3.0.0",
+-      "resolved": "https://registry.npmjs.org/abort-controller/-/abort-controller-3.0.0.tgz",
+-      "integrity": "sha512-h8lQ8tacZYnR3vNQTgibj+tODHI5/+l06Au2Pcriv/Gmet0eaj4TwWH41sO9wnHDiQsEj19q0drzdWdeAHtweg==",
+-      "dependencies": {
+-        "event-target-shim": "^5.0.0"
+-      },
+-      "engines": {
+-        "node": ">=6.5"
+-      }
+-    },
+     "node_modules/accepts": {
+       "version": "1.3.8",
+       "resolved": "https://registry.npmjs.org/accepts/-/accepts-1.3.8.tgz",
+@@ -5315,17 +5329,6 @@
+         "node": ">= 14"
+       }
+     },
+-    "node_modules/agentkeepalive": {
+-      "version": "4.6.0",
+-      "resolved": "https://registry.npmjs.org/agentkeepalive/-/agentkeepalive-4.6.0.tgz",
+-      "integrity": "sha512-kja8j7PjmncONqaTsB8fQ+wE2mSU2DJ9D4XKoJ5PFWIdRMa6SLSN1ff4mOr4jCbfRSsxR4keIiySJU0N9T5hIQ==",
+-      "dependencies": {
+-        "humanize-ms": "^1.2.1"
+-      },
+-      "engines": {
+-        "node": ">= 8.0.0"
+-      }
+-    },
+     "node_modules/ajv": {
+       "version": "8.17.1",
+       "resolved": "https://registry.npmjs.org/ajv/-/ajv-8.17.1.tgz",
+@@ -5470,11 +5473,6 @@
+       "resolved": "https://registry.npmjs.org/array-flatten/-/array-flatten-1.1.1.tgz",
+       "integrity": "sha512-PCVAQswWemu6UdxsDFFX/+gVeYqKAod3D3UVm91jHwynguOwAvYPhx8nNlM++NqRcK6CxxpUafjmhIdKiHibqg=="
+     },
+-    "node_modules/asynckit": {
+-      "version": "0.4.0",
+-      "resolved": "https://registry.npmjs.org/asynckit/-/asynckit-0.4.0.tgz",
+-      "integrity": "sha512-Oei9OH4tRh0YqU3GxhX79dM/mwVgvbZJaSNaRk+bshkj0S5cfHcgYakreBjrHwatXKbz+IoIdYLxrKim2MjW0Q=="
+-    },
+     "node_modules/autoprefixer": {
+       "version": "10.4.20",
+       "resolved": "https://registry.npmjs.org/autoprefixer/-/autoprefixer-10.4.20.tgz",
+@@ -6254,17 +6252,6 @@
+       "integrity": "sha512-IfEDxwoWIjkeXL1eXcDiow4UbKjhLdq6/EuSVR9GMN7KVH3r9gQ83e73hsz1Nd1T3ijd5xv1wcWRYO+D6kCI2w==",
+       "dev": true
+     },
+-    "node_modules/combined-stream": {
+-      "version": "1.0.8",
+-      "resolved": "https://registry.npmjs.org/combined-stream/-/combined-stream-1.0.8.tgz",
+-      "integrity": "sha512-FQN4MRfuJeHf7cBbBMJFXhKSDq+2kAArBlmRBvcvFE5BB1HZKXtSFASDhdlz9zOYwxh8lDdnvmMOe/+5cdoEdg==",
+-      "dependencies": {
+-        "delayed-stream": "~1.0.0"
+-      },
+-      "engines": {
+-        "node": ">= 0.8"
+-      }
+-    },
+     "node_modules/commander": {
+       "version": "2.20.3",
+       "resolved": "https://registry.npmjs.org/commander/-/commander-2.20.3.tgz",
+@@ -6744,14 +6731,6 @@
+         "url": "https://github.com/sponsors/sindresorhus"
+       }
+     },
+-    "node_modules/delayed-stream": {
+-      "version": "1.0.0",
+-      "resolved": "https://registry.npmjs.org/delayed-stream/-/delayed-stream-1.0.0.tgz",
+-      "integrity": "sha512-ZySD7Nf91aLB0RxL4KGrKHBXl7Eds1DAmEdcoVawXnLD7SDhpNgtuII2aAkg7a7QS41jxPSZ17p4VdGnMHk3MQ==",
+-      "engines": {
+-        "node": ">=0.4.0"
+-      }
+-    },
+     "node_modules/depd": {
+       "version": "2.0.0",
+       "resolved": "https://registry.npmjs.org/depd/-/depd-2.0.0.tgz",
+@@ -6938,6 +6917,7 @@
+       "version": "0.1.13",
+       "resolved": "https://registry.npmjs.org/encoding/-/encoding-0.1.13.tgz",
+       "integrity": "sha512-ETBauow1T35Y/WZMkio9jiM0Z5xjHHmJ4XmjZOq1l/dXz3lr2sRn87nJy20RupqSh1F2m3HHPSp8ShIPQJrJ3A==",
++      "dev": true,
+       "optional": true,
+       "dependencies": {
+         "iconv-lite": "^0.6.2"
+@@ -6947,6 +6927,7 @@
+       "version": "0.6.3",
+       "resolved": "https://registry.npmjs.org/iconv-lite/-/iconv-lite-0.6.3.tgz",
+       "integrity": "sha512-4fCk79wshMdzMp2rH06qWrJE4iolqLhCUH+OiuIgU++RB0+94NlDL81atO7GX55uUKueo0txHNtvEyI6D7WdMw==",
++      "dev": true,
+       "optional": true,
+       "dependencies": {
+         "safer-buffer": ">= 2.1.2 < 3.0.0"
+@@ -7132,20 +7113,6 @@
+         "node": ">= 0.4"
+       }
+     },
+-    "node_modules/es-set-tostringtag": {
+-      "version": "2.1.0",
+-      "resolved": "https://registry.npmjs.org/es-set-tostringtag/-/es-set-tostringtag-2.1.0.tgz",
+-      "integrity": "sha512-j6vWzfrGVfyXxge+O0x5sh6cvxAog0a/4Rdd2K36zCMV5eJ+/+tOAngRO8cODMNWbVRdVlmGZQL2YS3yR8bIUA==",
+-      "dependencies": {
+-        "es-errors": "^1.3.0",
+-        "get-intrinsic": "^1.2.6",
+-        "has-tostringtag": "^1.0.2",
+-        "hasown": "^2.0.2"
+-      },
+-      "engines": {
+-        "node": ">= 0.4"
+-      }
+-    },
+     "node_modules/esbuild": {
+       "version": "0.25.4",
+       "resolved": "https://registry.npmjs.org/esbuild/-/esbuild-0.25.4.tgz",
+@@ -7272,14 +7239,6 @@
+         "node": ">= 0.6"
+       }
+     },
+-    "node_modules/event-target-shim": {
+-      "version": "5.0.1",
+-      "resolved": "https://registry.npmjs.org/event-target-shim/-/event-target-shim-5.0.1.tgz",
+-      "integrity": "sha512-i/2XbnSz/uxRCU6+NdVJgKWDTM427+MqYbkQzD321DuCQJUqOuJKIA0IM2+W2xtYHdKOmZ4dR6fExsd4SXL+WQ==",
+-      "engines": {
+-        "node": ">=6"
+-      }
+-    },
+     "node_modules/eventemitter3": {
+       "version": "4.0.7",
+       "resolved": "https://registry.npmjs.org/eventemitter3/-/eventemitter3-4.0.7.tgz",
+@@ -7620,37 +7579,6 @@
+         "url": "https://github.com/sponsors/isaacs"
+       }
+     },
+-    "node_modules/form-data": {
+-      "version": "4.0.2",
+-      "resolved": "https://registry.npmjs.org/form-data/-/form-data-4.0.2.tgz",
+-      "integrity": "sha512-hGfm/slu0ZabnNt4oaRZ6uREyfCj6P4fT/n6A1rGV+Z0VdGXjfOhVUpkn6qVQONHGIFwmveGXyDs75+nr6FM8w==",
+-      "dependencies": {
+-        "asynckit": "^0.4.0",
+-        "combined-stream": "^1.0.8",
+-        "es-set-tostringtag": "^2.1.0",
+-        "mime-types": "^2.1.12"
+-      },
+-      "engines": {
+-        "node": ">= 6"
+-      }
+-    },
+-    "node_modules/form-data-encoder": {
+-      "version": "1.7.2",
+-      "resolved": "https://registry.npmjs.org/form-data-encoder/-/form-data-encoder-1.7.2.tgz",
+-      "integrity": "sha512-qfqtYan3rxrnCk1VYaA4H+Ms9xdpPqvLZa6xmMgFvhO32x7/3J/ExcTd6qpxM0vH2GdMI+poehyBZvqfMTto8A=="
+-    },
+-    "node_modules/formdata-node": {
+-      "version": "4.4.1",
+-      "resolved": "https://registry.npmjs.org/formdata-node/-/formdata-node-4.4.1.tgz",
+-      "integrity": "sha512-0iirZp3uVDjVGt9p49aTaqjk84TrglENEDuqfdlZQ1roC9CWlPk6Avf8EEnZNcAqPonwkG35x4n3ww/1THYAeQ==",
+-      "dependencies": {
+-        "node-domexception": "1.0.0",
+-        "web-streams-polyfill": "4.0.0-beta.3"
+-      },
+-      "engines": {
+-        "node": ">= 12.20"
+-      }
+-    },
+     "node_modules/forwarded": {
+       "version": "0.2.0",
+       "resolved": "https://registry.npmjs.org/forwarded/-/forwarded-0.2.0.tgz",
+@@ -7914,6 +7842,7 @@
+       "version": "1.0.2",
+       "resolved": "https://registry.npmjs.org/has-tostringtag/-/has-tostringtag-1.0.2.tgz",
+       "integrity": "sha512-NqADB8VjPFLM2V0VvHUewwwsw0ZWBaIdgo+ieHtK3hasLz4qeCRjYcqfB6AQrBggRKppKF8L52/VqdVsO47Dlw==",
++      "dev": true,
+       "dependencies": {
+         "has-symbols": "^1.0.3"
+       },
+@@ -8122,14 +8051,6 @@
+         "node": ">= 14"
+       }
+     },
+-    "node_modules/humanize-ms": {
+-      "version": "1.2.1",
+-      "resolved": "https://registry.npmjs.org/humanize-ms/-/humanize-ms-1.2.1.tgz",
+-      "integrity": "sha512-Fl70vYtsAFb/C06PTS9dZBo7ihau+Tu/DNCk/OyHhea07S+aeMWpFFkUaXRa8fI+ScZbEI8dfSxwY7gxZ9SAVQ==",
+-      "dependencies": {
+-        "ms": "^2.0.0"
+-      }
+-    },
+     "node_modules/hyperdyperid": {
+       "version": "1.2.0",
+       "resolved": "https://registry.npmjs.org/hyperdyperid/-/hyperdyperid-1.2.0.tgz",
+@@ -10018,44 +9939,6 @@
+       "dev": true,
+       "optional": true
+     },
+-    "node_modules/node-domexception": {
+-      "version": "1.0.0",
+-      "resolved": "https://registry.npmjs.org/node-domexception/-/node-domexception-1.0.0.tgz",
+-      "integrity": "sha512-/jKZoMpw0F8GRwl4/eLROPA3cfcXtLApP0QzLmUT/HuPCZWyB7IY9ZrMeKw2O/nFIqPQB3PVM9aYm0F312AXDQ==",
+-      "deprecated": "Use your platform's native DOMException instead",
+-      "funding": [
+-        {
+-          "type": "github",
+-          "url": "https://github.com/sponsors/jimmywarting"
+-        },
+-        {
+-          "type": "github",
+-          "url": "https://paypal.me/jimmywarting"
+-        }
+-      ],
+-      "engines": {
+-        "node": ">=10.5.0"
+-      }
+-    },
+-    "node_modules/node-fetch": {
+-      "version": "2.7.0",
+-      "resolved": "https://registry.npmjs.org/node-fetch/-/node-fetch-2.7.0.tgz",
+-      "integrity": "sha512-c4FRfUm/dbcWZ7U+1Wq0AwCyFL+3nt2bEw05wfxSz+DWpWsitgmSgYmy2dQdWyKC1694ELPqMs/YzUSNozLt8A==",
+-      "dependencies": {
+-        "whatwg-url": "^5.0.0"
+-      },
+-      "engines": {
+-        "node": "4.x || >=6.0.0"
+-      },
+-      "peerDependencies": {
+-        "encoding": "^0.1.0"
+-      },
+-      "peerDependenciesMeta": {
+-        "encoding": {
+-          "optional": true
+-        }
+-      }
+-    },
+     "node_modules/node-forge": {
+       "version": "1.3.1",
+       "resolved": "https://registry.npmjs.org/node-forge/-/node-forge-1.3.1.tgz",
+@@ -12681,11 +12564,6 @@
+         "node": ">=0.6"
+       }
+     },
+-    "node_modules/tr46": {
+-      "version": "0.0.3",
+-      "resolved": "https://registry.npmjs.org/tr46/-/tr46-0.0.3.tgz",
+-      "integrity": "sha512-N3WMsuqV66lT30CrXNbEjx4GEwlow3v6rr4mCcv6prnfwhS01rkgyFdjPNBYd9br7LpXV1+Emh01fHnq2Gdgrw=="
+-    },
+     "node_modules/tree-dump": {
+       "version": "1.0.3",
+       "resolved": "https://registry.npmjs.org/tree-dump/-/tree-dump-1.0.3.tgz",
+@@ -12799,10 +12677,20 @@
+         "node": "*"
+       }
+     },
++    "node_modules/undici": {
++      "version": "6.29.1",
++      "resolved": "https://registry.npmjs.org/undici/-/undici-6.29.1.tgz",
++      "integrity": "sha512-EvRlUt/QqAEvXdQeRMYUfwOQsfzpDztykrG2owGEE/rBOBoYv9uF39ZzsNDh4lTFHhTr2XOZjKkYgueD12ZmGA==",
++      "license": "MIT",
++      "engines": {
++        "node": ">=18.17"
++      }
++    },
+     "node_modules/undici-types": {
+       "version": "5.26.5",
+       "resolved": "https://registry.npmjs.org/undici-types/-/undici-types-5.26.5.tgz",
+-      "integrity": "sha512-JlCMO+ehdEIKqlFxk6IfVoAUVmgz7cU7zD/h9XZ0qzeosSHmUJVOzSQvvYSYWXkFXC+IfLKSIffhv0sVZup6pA=="
++      "integrity": "sha512-JlCMO+ehdEIKqlFxk6IfVoAUVmgz7cU7zD/h9XZ0qzeosSHmUJVOzSQvvYSYWXkFXC+IfLKSIffhv0sVZup6pA==",
++      "dev": true
+     },
+     "node_modules/unicode-canonical-property-names-ecmascript": {
+       "version": "2.0.1",
+@@ -13441,19 +13329,6 @@
+       "dev": true,
+       "optional": true
+     },
+-    "node_modules/web-streams-polyfill": {
+-      "version": "4.0.0-beta.3",
+-      "resolved": "https://registry.npmjs.org/web-streams-polyfill/-/web-streams-polyfill-4.0.0-beta.3.tgz",
+-      "integrity": "sha512-QW95TCTaHmsYfHDybGMwO5IJIM93I/6vTRk+daHTWFPhwh+C8Cg7j7XyKrwrj8Ib6vYXe0ocYNrmzY4xAAN6ug==",
+-      "engines": {
+-        "node": ">= 14"
+-      }
+-    },
+-    "node_modules/webidl-conversions": {
+-      "version": "3.0.1",
+-      "resolved": "https://registry.npmjs.org/webidl-conversions/-/webidl-conversions-3.0.1.tgz",
+-      "integrity": "sha512-2JAn3z8AR6rjK8Sm8orRC0h/bcl/DqL7tRPdGZ4I1CjdF+EaMLmYxBHyXuKL849eucPFhvBoxMsflfOb8kxaeQ=="
+-    },
+     "node_modules/webpack": {
+       "version": "5.98.0",
+       "resolved": "https://registry.npmjs.org/webpack/-/webpack-5.98.0.tgz",
+@@ -13772,15 +13647,6 @@
+         "node": ">=0.8.0"
+       }
+     },
+-    "node_modules/whatwg-url": {
+-      "version": "5.0.0",
+-      "resolved": "https://registry.npmjs.org/whatwg-url/-/whatwg-url-5.0.0.tgz",
+-      "integrity": "sha512-saE57nupxk6v3HY35+jzBwYa0rKSy0XR8JSxZPwgLr7ys0IBzhGviA1/TUGJLmSVqs8pb9AnvICXEuOHLprYTw==",
+-      "dependencies": {
+-        "tr46": "~0.0.3",
+-        "webidl-conversions": "^3.0.0"
+-      }
+-    },
+     "node_modules/which": {
+       "version": "1.3.1",
+       "resolved": "https://registry.npmjs.org/which/-/which-1.3.1.tgz",
+diff --git a/package.json b/package.json
+index 7024a66..c241f5b 100644
+--- a/package.json
++++ b/package.json
+@@ -7,6 +7,7 @@
+     "build": "ng build",
+     "watch": "ng build --watch --configuration development",
+     "test": "ng test",
++    "test:server": "tsc -p tsconfig.server-tests.json && cd node_modules/.server-test-build && node --test server-tests/custom-rss.test.js server-tests/rss-redirect.test.js",
+     "serve:ssr:police-ticker": "node dist/police-ticker/server/server.mjs"
+   },
+   "private": true,
+@@ -22,15 +23,16 @@
+     "@angular/platform-server": "^19.2.0",
+     "@angular/router": "^19.2.0",
+     "@angular/ssr": "^19.2.6",
++    "@netlify/angular-runtime": "^4.0.0",
+     "dotenv": "^16.5.0",
+     "express": "^4.18.2",
+     "flexsearch": "^0.8.204",
+     "rss-parser": "^3.13.0",
+     "rxjs": "~7.8.0",
+     "tslib": "^2.3.0",
++    "undici": "^6.29.1",
+     "xml2js": "^0.6.2",
+-    "zone.js": "~0.15.0",
+-    "@netlify/angular-runtime": "^4.0.0"
++    "zone.js": "~0.15.0"
+   },
+   "devDependencies": {
+     "@angular-devkit/build-angular": "^19.2.6",
+diff --git a/pr-body-temp.md b/pr-body-temp.md
+new file mode 100644
+index 0000000..6e9dc5f
+--- /dev/null
++++ b/pr-body-temp.md
+@@ -0,0 +1,56 @@
++## Summary
++
++This branch implements [Spec #1](https://github.com/andre-goldmann/police-ticker/issues/1): paste an arbitrary `http`/`https` RSS URL in the PoliceTicker feed selector, load via `/api/custom-rss` alongside presets, client validation, server scheme + host guard (private/loopback/link-local/unspecified, IPv4-mapped/compatible IPv6), redirects rejected in `readRssFeed`, `CONTEXT.md` + ADR 0001.
++
++**Latest:** Close the DNS rebinding gap: after `ensurePublicHost` resolves and accepts addresses, `/api/custom-rss` passes them into `readRssFeed`, which uses Undici with a **pinned connector** (`buildConnector` + `lookup` returning only those addresses, `servername` for TLS SNI) so the outbound TCP connect does not perform a second uncontrolled DNS resolution for that hostname. Removed the accidental `scratch/` tree (including nested `proof/` assets). Added direct `undici` dependency. Server tests assert `readRssFeed` receives the original URL plus the pinned `addresses` on success.
++
++**Validation:** `npm run test:server` → 11 tests pass.
++
++Closes #1
++
++---
++
++SUMMARY
++
++Custom RSS URLs flow through `/api/custom-rss` with scheme validation, host resolution checks against restricted ranges (including IPv4-mapped IPv6 and unspecified `0.0.0.0/8` / `::`), pinned Undici fetch so TCP connect targets only guard-approved addresses (mitigates DNS rebinding between validation and fetch), client UI for pasted URLs with 100-item cap and preset flow preserved. Scratch/proof artifacts removed from the branch; ADR 0001 updated.
++
++STORY 1 — Paste and load a custom feed URL (precedence over preset; submit works without preset)
++
++EVIDENCE: `src/app/rss-feed.component.ts` (`fetchFeed`, `canSubmitFeed`, synthesized feed); `src/app/rss-feed.component.html` (custom input). Karma: `src/app/rss-feed.component.spec.ts` — custom URL encoded to `/api/custom-rss`, submit without preset, preference over preset. Use `CHROME_BIN=/home/soulsaver/.cache/ms-playwright/chromium-1248/chrome-linux64/chrome` for `ng test` if needed.
++
++STORY 2 — Invalid URL: client-only “Enter a valid http(s) URL”, no request
++
++EVIDENCE: Client validation + inline message in component; Karma asserts no `HttpClient` request for invalid schemes/parsing.
++
++STORY 3 — Custom feed header: hostname + “Custom feed”
++
++EVIDENCE: Synthesized `PoliceFeed` in `fetchFeed`; template feed info; Karma asserts hostname and description.
++
++STORY 4 — AI flows unchanged for loaded items
++
++EVIDENCE: Same `/api/openrouter-chat` and `/api/analyze-rss-feed` usage from items; Karma expects payloads from item title/description.
++
++STORY 5 — Cap rendered list at 100 items client-side
++
++EVIDENCE: `MAX_CUSTOM_FEED_ITEMS` + slice; Karma 100 vs fewer items.
++
++STORY 6 — Ephemeral: `policeFeeds` unchanged, no persistence
++
++EVIDENCE: No mutation of preset list; Karma localStorage spy + dropdown options unchanged.
++
++STORY 7 — Server rejects non-http(s) before fetch
++
++EVIDENCE: `validateCustomRssUrl` in `src/custom-rss-url-guard.ts`; `src/server.ts` 400; `server-tests/custom-rss.test.ts` `file://` / `ftp://` / success `https`.
++
++STORY 8 — Server rejects private, loopback, link-local, unspecified, IPv4-mapped/compatible; no `readRssFeed` on 400; pinned connect (DNS rebinding mitigation)
++
++EVIDENCE: `ensurePublicHost` returns `addresses` when ok; `src/server.ts` `openrouter.readRssFeed(urlParam, hostCheck.addresses)`; `src/openrouter-client.ts` `readRssFeed` uses `buildConnector` pin + `UndiciClient` + `undiciFetch` with `redirect: 'error'`. `server-tests/custom-rss.test.ts` covers reject cases and asserts success calls include `{ url, addresses }`. Run: `npm run test:server` → 11 passed.
++
++STORY 9 — Preset paths frozen
++
++EVIDENCE: Changes focus on custom-rss stack, docs, and tests; `/api/german-police-feeds` and preset list behavior unchanged.
++
++STORY 10 — CONTEXT.md glossary + ADR
++
++EVIDENCE: `CONTEXT.md`; `docs/adr/0001-custom-rss-feed-source-and-host-restrictions.md` (ranges, redirects, pinned fetch).
++
+diff --git a/proof/1280.png b/proof/1280.png
+new file mode 100644
+index 0000000..9b2ee95
+Binary files /dev/null and b/proof/1280.png differ
+diff --git a/proof/375.png b/proof/375.png
+new file mode 100644
+index 0000000..cb81576
+Binary files /dev/null and b/proof/375.png differ
+diff --git a/server-tests/custom-rss.test.ts b/server-tests/custom-rss.test.ts
+new file mode 100644
+index 0000000..9c3fbae
+--- /dev/null
++++ b/server-tests/custom-rss.test.ts
+@@ -0,0 +1,219 @@
++/**
++ * Handler-level tests for the /api/custom-rss endpoint (stories 7 and 8 of the
++ * custom RSS feed spec).
++ *
++ * DNS resolution and `OpenRouterClient.readRssFeed` are stubbed, so no live
++ * network call is ever made.
++ */
++import './setup-ssr-manifest';
++
++import assert from 'node:assert/strict';
++import * as dns from 'node:dns';
++import { afterEach, beforeEach, describe, it } from 'node:test';
++
++import { netlifyAppEngineHandler } from '../src/server';
++import { OpenRouterClient } from '../src/openrouter-client';
++import type { ResolvedAddress } from '../src/custom-rss-url-guard';
++
++type TestLookup = (
++  hostname: string,
++  options: { all: true },
++) => Promise<Array<{ address: string; family: number }>>;
++
++const originalLookup = dns.promises.lookup;
++const originalReadRssFeed = OpenRouterClient.prototype.readRssFeed;
++
++let readRssFeedCalls: Array<{ url: string; addresses?: ResolvedAddress[] }>;
++
++const rssItems = [
++  {
++    title: 'Press release',
++    link: 'https://example.com/1',
++    pubDate: 'today',
++    description: 'A stubbed RSS item',
++  },
++];
++
++/** Replace DNS resolution for the duration of one handler call. */
++function stubLookup(lookup: TestLookup) {
++  (dns.promises as unknown as { lookup: TestLookup }).lookup = lookup;
++}
++
++function resolvesTo(addresses: Array<{ address: string; family: number }>): TestLookup {
++  return async () => addresses.map((entry) => ({ ...entry }));
++}
++
++function resolvesToNothing(): TestLookup {
++  return async () => [];
++}
++
++/** Call the real /api/custom-rss handler with the given feed URL. */
++async function callHandler(feedUrl: string): Promise<Response> {
++  return netlifyAppEngineHandler(
++    new Request(`http://localhost/api/custom-rss?url=${encodeURIComponent(feedUrl)}`, {
++      method: 'GET',
++    }),
++  );
++}
++
++beforeEach(() => {
++  readRssFeedCalls = [];
++  OpenRouterClient.prototype.readRssFeed = async (
++    url: string,
++    addresses?: ResolvedAddress[],
++  ) => {
++    readRssFeedCalls.push({ url, addresses });
++    return rssItems;
++  };
++});
++
++afterEach(() => {
++  stubLookup(originalLookup);
++  OpenRouterClient.prototype.readRssFeed = originalReadRssFeed;
++});
++
++describe('/api/custom-rss', () => {
++  describe('non-http(s) schemes (story 7)', () => {
++    it('responds 400 with an error body and does not call readRssFeed for file:// URLs', async () => {
++      const response = await callHandler('file:///etc/hosts');
++
++      assert.equal(response.status, 400);
++      const body = await response.json();
++      assert.equal(typeof body.error, 'string');
++      assert.equal(readRssFeedCalls.length, 0);
++    });
++
++    it('responds 400 and does not call readRssFeed for ftp:// URLs', async () => {
++      const response = await callHandler('ftp://example.com/feed.xml');
++
++      assert.equal(response.status, 400);
++      assert.equal(readRssFeedCalls.length, 0);
++    });
++
++    it('responds 200 and calls readRssFeed with the requested http(s) URL', async () => {
++      stubLookup(resolvesTo([{ address: '153.92.100.206', family: 4 }]));
++      const target = 'https://www.polizei.sachsen.de/de/presse_rss_pdl.xml';
++
++      const response = await callHandler(target);
++
++      assert.equal(response.status, 200);
++      assert.deepEqual(readRssFeedCalls, [
++        { url: target, addresses: [{ address: '153.92.100.206', family: 4 }] },
++      ]);
++      assert.deepEqual(await response.json(), rssItems);
++    });
++  });
++
++  describe('private, loopback, and link-local targets (story 8)', () => {
++    it('responds 400 and does not call readRssFeed when the host resolves only to a loopback address', async () => {
++      const cases: Array<[string, Array<{ address: string; family: number }>]> = [
++        ['http://127.0.0.1/feed.xml', [{ address: '127.0.0.1', family: 4 }]],
++        ['http://[::1]/feed.xml', [{ address: '::1', family: 6 }]],
++      ];
++
++      for (const [feedUrl, addresses] of cases) {
++        stubLookup(resolvesTo(addresses));
++        const response = await callHandler(feedUrl);
++
++        assert.equal(response.status, 400, `${feedUrl} should be rejected`);
++        const body = await response.json();
++        assert.equal(typeof body.error, 'string');
++      }
++      assert.equal(readRssFeedCalls.length, 0);
++    });
++
++    it('responds 400 and does not call readRssFeed when the host resolves only to a private address', async () => {
++      const cases: Array<[string, Array<{ address: string; family: number }>]> = [
++        ['http://intranet.example.com/feed.xml', [{ address: '10.1.2.3', family: 4 }]],
++        ['http://gateway.example.com/feed.xml', [{ address: '172.16.0.9', family: 4 }]],
++        ['http://printer.example.com/feed.xml', [{ address: '192.168.1.10', family: 4 }]],
++        ['http://nas.example.com/feed.xml', [{ address: 'fd12::1', family: 6 }]],
++      ];
++
++      for (const [feedUrl, addresses] of cases) {
++        stubLookup(resolvesTo(addresses));
++        const response = await callHandler(feedUrl);
++
++        assert.equal(response.status, 400, `${feedUrl} should be rejected`);
++      }
++      assert.equal(readRssFeedCalls.length, 0);
++    });
++
++    it('responds 400 and does not call readRssFeed when the host resolves only to a link-local address', async () => {
++      const cases: Array<[string, Array<{ address: string; family: number }>]> = [
++        ['http://linklocal.example.com/feed.xml', [{ address: '169.254.3.4', family: 4 }]],
++        ['http://v6linklocal.example.com/feed.xml', [{ address: 'fe80::a', family: 6 }]],
++      ];
++
++      for (const [feedUrl, addresses] of cases) {
++        stubLookup(resolvesTo(addresses));
++        const response = await callHandler(feedUrl);
++
++        assert.equal(response.status, 400, `${feedUrl} should be rejected`);
++      }
++      assert.equal(readRssFeedCalls.length, 0);
++    });
++
++    it('responds 400 and does not call readRssFeed when the host resolves to an IPv4-mapped or IPv4-compatible IPv6 address', async () => {
++      const cases: Array<[string, Array<{ address: string; family: number }>]> = [
++        ['http://mappedprivate.example.com/feed.xml', [{ address: '::ffff:192.168.0.1', family: 6 }]],
++        ['http://mappedloopback.example.com/feed.xml', [{ address: '::ffff:127.0.0.1', family: 6 }]],
++        ['http://mappedten.example.com/feed.xml', [{ address: '::ffff:10.0.0.1', family: 6 }]],
++        ['http://compatibleloopback.example.com/feed.xml', [{ address: '::127.0.0.1', family: 6 }]],
++      ];
++
++      for (const [feedUrl, addresses] of cases) {
++        stubLookup(resolvesTo(addresses));
++        const response = await callHandler(feedUrl);
++
++        assert.equal(response.status, 400, `${feedUrl} should be rejected`);
++        const body = await response.json();
++        assert.equal(typeof body.error, 'string');
++      }
++      assert.equal(readRssFeedCalls.length, 0);
++    });
++
++    it('responds 400 and does not call readRssFeed when the host resolves to an unspecified address', async () => {
++      // 0.0.0.0 ("this network") and :: (IPv6 unspecified) reach loopback on
++      // Linux, so they are treated like the loopback targets above.
++      const cases: Array<[string, Array<{ address: string; family: number }>]> = [
++        ['http://0.0.0.0/feed.xml', [{ address: '0.0.0.0', family: 4 }]],
++        ['http://[::]/feed.xml', [{ address: '::', family: 6 }]],
++      ];
++
++      for (const [feedUrl, addresses] of cases) {
++        stubLookup(resolvesTo(addresses));
++        const response = await callHandler(feedUrl);
++
++        assert.equal(response.status, 400, `${feedUrl} should be rejected`);
++        const body = await response.json();
++        assert.equal(typeof body.error, 'string');
++      }
++      assert.equal(readRssFeedCalls.length, 0);
++    });
++
++    it('responds 400 with an error body and does not call readRssFeed when the hostname does not resolve', async () => {
++      stubLookup(resolvesToNothing());
++
++      const response = await callHandler('https://missing.example.com/feed.xml');
++
++      assert.equal(response.status, 400);
++      const body = await response.json();
++      assert.equal(typeof body.error, 'string');
++      assert.equal(readRssFeedCalls.length, 0);
++    });
++
++    it('responds 200 and calls readRssFeed with the original URL string when the host resolves to a public address', async () => {
++      stubLookup(resolvesTo([{ address: '153.92.100.206', family: 4 }]));
++      const target = 'https://www.polizei.sachsen.de/de/presse_rss_pdl.xml';
++
++      const response = await callHandler(target);
++
++      assert.equal(response.status, 200);
++      assert.deepEqual(readRssFeedCalls, [
++        { url: target, addresses: [{ address: '153.92.100.206', family: 4 }] },
++      ]);
++    });
++  });
++});
++
+diff --git a/server-tests/rss-redirect.test.ts b/server-tests/rss-redirect.test.ts
+new file mode 100644
+index 0000000..0ecb324
+--- /dev/null
++++ b/server-tests/rss-redirect.test.ts
+@@ -0,0 +1,57 @@
++/**
++ * Unit test for redirect handling in `OpenRouterClient.readRssFeed`, the fetch
++ * used by the guarded /api/custom-rss endpoint. The host guard validates only
++ * the requested URL, so the fetch must not follow a 3xx that could point at an
++ * internal target. Runs against a loopback HTTP server, so no live network
++ * call is made.
++ */
++import assert from 'node:assert/strict';
++import * as http from 'node:http';
++import { after, before, describe, it } from 'node:test';
++
++import { OpenRouterClient } from '../src/openrouter-client';
++
++const RSS_BODY =
++  '<?xml version="1.0"?><rss><channel><item><title>Internal</title></item></channel></rss>';
++
++describe('readRssFeed redirect handling', () => {
++  const requestedPaths: string[] = [];
++  let server: http.Server;
++  let baseUrl: string;
++
++  before(async () => {
++    server = http.createServer((request, response) => {
++      requestedPaths.push(request.url ?? '');
++      if (request.url === '/feed.xml') {
++        // A public-looking feed URL that redirects to an internal target.
++        response.writeHead(302, { Location: '/internal-target.xml' });
++        response.end();
++      } else {
++        response.writeHead(200, { 'Content-Type': 'application/xml' });
++        response.end(RSS_BODY);
++      }
++    });
++    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
++    const address = server.address();
++    if (address === null || typeof address === 'string') {
++      throw new Error('Could not determine test server port');
++    }
++    baseUrl = `http://127.0.0.1:${address.port}`;
++  });
++
++  after(async () => {
++    await new Promise<void>((resolve) => server.close(() => resolve()));
++  });
++
++  it('rejects a redirecting feed URL and never requests the redirect target', async () => {
++    const client = new OpenRouterClient();
++
++    await assert.rejects(client.readRssFeed(`${baseUrl}/feed.xml`));
++
++    assert.ok(requestedPaths.includes('/feed.xml'), 'the feed URL itself was requested');
++    assert.ok(
++      !requestedPaths.includes('/internal-target.xml'),
++      'the redirect target must not be requested',
++    );
++  });
++});
+diff --git a/server-tests/runtime-modules.d.ts b/server-tests/runtime-modules.d.ts
+new file mode 100644
+index 0000000..4a84145
+--- /dev/null
++++ b/server-tests/runtime-modules.d.ts
+@@ -0,0 +1,22 @@
++/**
++ * Ambient declarations for the ESM-only SSR packages imported by src/server.ts.
++ * They only provide compile-time types for the server test build; at runtime the
++ * real packages are loaded inside the test process (Node's require(esm) support).
++ */
++declare module '@angular/ssr' {
++  export class AngularAppEngine {
++    handle(request: Request, context?: unknown): Promise<Response | null>;
++  }
++  export function createRequestHandler(
++    handler: (request: Request) => Promise<Response>,
++  ): (request: Request) => Promise<Response>;
++  export function ɵsetAngularAppEngineManifest(manifest: {
++    readonly entryPoints: Readonly<Record<string, (() => Promise<unknown>) | undefined>>;
++    readonly basePath: string;
++    readonly supportedLocales: Readonly<Record<string, string | undefined>>;
++  }): void;
++}
++
++declare module '@netlify/angular-runtime/app-engine.js' {
++  export function getContext(): unknown;
++}
+diff --git a/server-tests/setup-ssr-manifest.ts b/server-tests/setup-ssr-manifest.ts
+new file mode 100644
+index 0000000..790328a
+--- /dev/null
++++ b/server-tests/setup-ssr-manifest.ts
+@@ -0,0 +1,15 @@
++/**
++ * Runs before src/server.ts is imported: the module under test constructs an
++ * `AngularAppEngine` at import time, which requires a manifest that is normally
++ * injected by the Angular build. A minimal stub keeps the handler tests runnable
++ * in plain Node (the Angular rendering path is never exercised by them).
++ */
++import '@angular/compiler';
++
++import { ɵsetAngularAppEngineManifest } from '@angular/ssr';
++
++ɵsetAngularAppEngineManifest({
++  entryPoints: {},
++  basePath: '/',
++  supportedLocales: {},
++});
+diff --git a/src/app/rss-feed.component.html b/src/app/rss-feed.component.html
+index b8b4700..468a290 100644
+--- a/src/app/rss-feed.component.html
++++ b/src/app/rss-feed.component.html
+@@ -11,7 +11,13 @@
+           </option>
+         </select>
+       </div>
+-      <button type="submit" [disabled]="loading || !selectedFeed">Load Selected Feed</button>
++      <input
++        type="text"
++        name="customFeedUrl"
++        [(ngModel)]="customFeedUrl"
++        placeholder="Or paste a custom RSS feed URL"
++      />
++      <button type="submit" [disabled]="!canSubmitFeed">Load Selected Feed</button>
+     </form>
+   </div>
+   
+diff --git a/src/app/rss-feed.component.spec.ts b/src/app/rss-feed.component.spec.ts
+new file mode 100644
+index 0000000..d32c1cf
+--- /dev/null
++++ b/src/app/rss-feed.component.spec.ts
+@@ -0,0 +1,378 @@
++import { ComponentFixture, TestBed } from '@angular/core/testing';
++import { HttpClientModule, provideHttpClient } from '@angular/common/http';
++import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
++
++import { PoliceFeed, RssFeedComponent } from './rss-feed.component';
++
++interface FeedItem {
++  title: string;
++  link: string;
++  pubDate: string;
++  description: string;
++}
++
++const PRESET_FEEDS: PoliceFeed[] = [
++  {
++    name: 'Polizei Berlin',
++    url: 'https://www.berlin.de/polizei/rss.xml',
++    description: 'Berlin police feed',
++  },
++  {
++    name: 'Polizei Hamburg',
++    url: 'https://www.hamburg.de/polizei/rss.xml',
++    description: 'Hamburg police feed',
++  },
++];
++
++const CUSTOM_URL = 'https://example.com/feed.xml';
++const CUSTOM_REQUEST = '/api/custom-rss?url=https%3A%2F%2Fexample.com%2Ffeed.xml';
++
++function feedItems(count: number): FeedItem[] {
++  return Array.from({ length: count }, (_, i) => ({
++    title: `Item ${i + 1}`,
++    link: `https://example.com/${i + 1}`,
++    pubDate: 'Mon, 01 Jan 2026 00:00:00 GMT',
++    description: `Description ${i + 1}`,
++  }));
++}
++
++const TWO_ITEMS = feedItems(2);
++
++describe('RssFeedComponent custom feeds', () => {
++  let fixture: ComponentFixture<RssFeedComponent>;
++  let component: RssFeedComponent;
++  let http: HttpTestingController;
++
++  beforeEach(async () => {
++    await TestBed.configureTestingModule({
++      imports: [RssFeedComponent],
++      providers: [provideHttpClient(), provideHttpClientTesting()],
++    })
++      // The test provides its own HttpClient so requests are intercepted.
++      .overrideComponent(RssFeedComponent, {
++        remove: { imports: [HttpClientModule] },
++      })
++      .compileComponents();
++
++    fixture = TestBed.createComponent(RssFeedComponent);
++    component = fixture.componentInstance;
++    http = TestBed.inject(HttpTestingController);
++    fixture.detectChanges();
++  });
++
++  afterEach(() => http.verify());
++
++  function flushPoliceFeeds() {
++    http.expectOne('/api/german-police-feeds').flush(PRESET_FEEDS);
++    fixture.detectChanges();
++  }
++
++  function setCustomUrl(value: string) {
++    const input: HTMLInputElement = fixture.nativeElement.querySelector(
++      'input[name="customFeedUrl"]',
++    );
++    input.value = value;
++    input.dispatchEvent(new Event('input'));
++    fixture.detectChanges();
++  }
++
++  function submit() {
++    const form: HTMLFormElement = fixture.nativeElement.querySelector('form.input-row');
++    form.dispatchEvent(new Event('submit'));
++    fixture.detectChanges();
++  }
++
++  function errorText(): string {
++    const element = fixture.nativeElement.querySelector('.error');
++    return element ? element.textContent.trim() : '';
++  }
++
++  function flushCustomFeed(items: FeedItem[]) {
++    http.expectOne(CUSTOM_REQUEST).flush(items);
++    fixture.detectChanges();
++  }
++
++  describe('story 1: load a pasted feed URL', () => {
++    it('sends exactly one GET to /api/custom-rss with the encoded custom URL', () => {
++      flushPoliceFeeds();
++      setCustomUrl(CUSTOM_URL);
++      submit();
++
++      const request = http.expectOne(CUSTOM_REQUEST);
++      expect(request.request.method).toBe('GET');
++      request.flush(TWO_ITEMS);
++      fixture.detectChanges();
++    });
++
++    it('renders exactly the returned items in the feed items list', () => {
++      flushPoliceFeeds();
++      setCustomUrl(CUSTOM_URL);
++      submit();
++      flushCustomFeed(TWO_ITEMS);
++
++      const rendered = fixture.nativeElement.querySelectorAll('ul.feed-items li');
++      expect(rendered.length).toBe(TWO_ITEMS.length);
++      expect(rendered[0].textContent).toMatch(/Item 1/);
++      expect(rendered[1].textContent).toMatch(/Item 2/);
++    });
++
++    it('enables the submit button when no preset is selected but a custom URL is entered', () => {
++      flushPoliceFeeds();
++      component.selectedFeed = null;
++      fixture.detectChanges();
++
++      const button: HTMLButtonElement = fixture.nativeElement.querySelector('button[type="submit"]');
++      expect(button.disabled).toBe(true);
++
++      setCustomUrl(CUSTOM_URL);
++      expect(button.disabled).toBe(false);
++    });
++
++    it('loads the custom feed without showing "Please select a feed first" when selectedFeed is null', () => {
++      flushPoliceFeeds();
++      component.selectedFeed = null;
++      setCustomUrl(CUSTOM_URL);
++      submit();
++
++      http.expectOne(CUSTOM_REQUEST).flush(TWO_ITEMS);
++      fixture.detectChanges();
++      expect(errorText()).not.toMatch(/Please select a feed first/);
++    });
++
++    it('prefers the custom URL over a selected preset and sends no request for the preset URL', () => {
++      flushPoliceFeeds();
++      component.selectedFeed = PRESET_FEEDS[0];
++      setCustomUrl(CUSTOM_URL);
++      submit();
++
++      http.expectOne(CUSTOM_REQUEST).flush(TWO_ITEMS);
++      fixture.detectChanges();
++      expect(component.selectedFeed.name).toBe('example.com');
++      http.expectNone(`/api/custom-rss?url=${encodeURIComponent(PRESET_FEEDS[0].url)}`);
++    });
++
++    it('shows "Please select a feed first" and sends no request when the custom input is empty and no feed is selected', () => {
++      flushPoliceFeeds();
++      component.selectedFeed = null;
++      setCustomUrl('   ');
++      submit();
++
++      expect(errorText()).toMatch(/Please select a feed first/);
++      http.expectNone((request) => request.url.includes('/api/custom-rss'));
++    });
++  });
++
++  describe('story 2: invalid input stays client-side', () => {
++    it('shows "Enter a valid http(s) URL" and sends no request for values that do not parse as http(s) URLs', () => {
++      flushPoliceFeeds();
++
++      for (const value of ['example.com/feed', 'ftp://example.com/feed.xml']) {
++        setCustomUrl(value);
++        submit();
++        expect(errorText()).toBe('Enter a valid http(s) URL');
++        expect(component.loading).toBe(false);
++      }
++
++      http.expectNone((request) => request.url.includes('/api/custom-rss'));
++    });
++  });
++
++  describe('story 3: custom feed identity', () => {
++    it('synthesizes selectedFeed as the hostname, pasted URL, and "Custom feed"', () => {
++      flushPoliceFeeds();
++      setCustomUrl(CUSTOM_URL);
++      submit();
++      flushCustomFeed(TWO_ITEMS);
++
++      expect(component.selectedFeed).toEqual({
++        name: 'example.com',
++        url: CUSTOM_URL,
++        description: 'Custom feed',
++      });
++    });
++
++    it('shows the pasted URL hostname as the feed-info title and "Custom feed" as its description', () => {
++      flushPoliceFeeds();
++      setCustomUrl('https://feeds.example.org/rss.xml');
++      submit();
++      http.expectOne('/api/custom-rss?url=https%3A%2F%2Ffeeds.example.org%2Frss.xml').flush(TWO_ITEMS);
++      fixture.detectChanges();
++
++      const feedInfo = fixture.nativeElement.querySelector('.feed-info');
++      expect(feedInfo.querySelector('h3').textContent.trim()).toBe('feeds.example.org');
++      expect(feedInfo.querySelector('p').textContent.trim()).toBe('Custom feed');
++    });
++  });
++
++  describe('story 4: AI analysis runs for custom feeds', () => {
++    beforeEach(() => {
++      flushPoliceFeeds();
++      setCustomUrl(CUSTOM_URL);
++      submit();
++      flushCustomFeed(TWO_ITEMS);
++    });
++
++    it('posts the item title and description to /api/openrouter-chat when an item is clicked', () => {
++      fixture.nativeElement.querySelector('ul.feed-items a.feed-title').click();
++      fixture.detectChanges();
++
++      const request = http.expectOne({ method: 'POST', url: '/api/openrouter-chat' });
++      const userMessage = request.request.body.messages.find(
++        (message: { role: string }) => message.role === 'user',
++      );
++      expect(userMessage.content).toMatch(/Title: Item 1/);
++      expect(userMessage.content).toMatch(/Content: Description 1/);
++      request.flush({ choices: [{ message: { content: 'analysis' } }] });
++      http
++        .expectOne({ method: 'POST', url: '/api/analyze-rss-feed' })
++        .flush({ choices: [{ message: { content: '{"summary":"ok"}' } }] });
++    });
++
++    it('posts the item title and description as feedDescription to /api/analyze-rss-feed', () => {
++      fixture.nativeElement.querySelector('ul.feed-items a.feed-title').click();
++      fixture.detectChanges();
++
++      const request = http.expectOne({ method: 'POST', url: '/api/analyze-rss-feed' });
++      expect(request.request.body.feedDescription).toBe('Item 1 - Description 1');
++      request.flush({ choices: [{ message: { content: '{"summary":"ok"}' } }] });
++      http
++        .expectOne({ method: 'POST', url: '/api/openrouter-chat' })
++        .flush({ choices: [{ message: { content: 'analysis' } }] });
++    });
++  });
++
++  describe('story 5: rendered list cap', () => {
++    it('renders exactly the first 100 items and shows "100 item(s)" when more are returned', () => {
++      flushPoliceFeeds();
++      setCustomUrl(CUSTOM_URL);
++      submit();
++      flushCustomFeed(feedItems(150));
++
++      const rendered = fixture.nativeElement.querySelectorAll('ul.feed-items li');
++      expect(rendered.length).toBe(100);
++      expect(fixture.nativeElement.querySelector('.feed-meta').textContent).toMatch(/100 item\(s\)/);
++    });
++
++    it('renders all returned items when 100 or fewer come back', () => {
++      flushPoliceFeeds();
++      setCustomUrl(CUSTOM_URL);
++      submit();
++      flushCustomFeed(feedItems(7));
++
++      const rendered = fixture.nativeElement.querySelectorAll('ul.feed-items li');
++      expect(rendered.length).toBe(7);
++      expect(fixture.nativeElement.querySelector('.feed-meta').textContent).toMatch(/7 item\(s\)/);
++    });
++  });
++
++  describe('story 6: ephemeral custom feed', () => {
++    it('keeps the dropdown options unchanged after a custom feed loads', () => {
++      flushPoliceFeeds();
++      setCustomUrl(CUSTOM_URL);
++      submit();
++      flushCustomFeed(TWO_ITEMS);
++
++      const options = fixture.nativeElement.querySelectorAll(
++        'select option',
++      ) as NodeListOf<HTMLOptionElement>;
++      const optionTexts = Array.from(options).map((option) => (option.textContent ?? '').trim());
++      expect(optionTexts).toEqual([
++        'Select a German police feed...',
++        'Polizei Sachsen - Official police feed from Saxony',
++        'Polizei Berlin - Berlin police feed',
++        'Polizei Hamburg - Hamburg police feed',
++      ]);
++    });
++
++    it('writes nothing to localStorage', () => {
++      const setItem = spyOn(localStorage, 'setItem');
++
++      flushPoliceFeeds();
++      setCustomUrl(CUSTOM_URL);
++      submit();
++      flushCustomFeed(TWO_ITEMS);
++
++      expect(setItem).not.toHaveBeenCalled();
++    });
++  });
++
++  describe('story 9: preset flow frozen', () => {
++    it('loads a selected preset through /api/custom-rss unchanged', () => {
++      flushPoliceFeeds();
++      component.selectedFeed = PRESET_FEEDS[0];
++      fixture.detectChanges();
++      setCustomUrl('');
++      submit();
++
++      const request = http.expectOne(
++        `/api/custom-rss?url=${encodeURIComponent(PRESET_FEEDS[0].url)}`,
++      );
++      request.flush(TWO_ITEMS);
++      fixture.detectChanges();
++
++      expect(component.feedItems.length).toBe(TWO_ITEMS.length);
++      expect(component.selectedFeed).toBe(PRESET_FEEDS[0]);
++    });
++
++    it('falls back to only the default feed when /api/german-police-feeds fails', () => {
++      http
++        .expectOne('/api/german-police-feeds')
++        .flush('no feeds', { status: 500, statusText: 'Server Error' });
++      fixture.detectChanges();
++
++      expect(component.policeFeeds.length).toBe(1);
++      expect(component.policeFeeds[0].name).toBe('Polizei Sachsen');
++      expect(component.selectedFeed).toBe(component.policeFeeds[0]);
++    });
++
++    it('surfaces server 400 error messages through the existing error banner', () => {
++      flushPoliceFeeds();
++      setCustomUrl(CUSTOM_URL);
++      submit();
++
++      http.expectOne(CUSTOM_REQUEST).flush(
++        { error: 'Requests to private, loopback, or link-local addresses are not allowed' },
++        { status: 400, statusText: 'Bad Request' },
++      );
++      fixture.detectChanges();
++
++      expect(errorText()).toMatch(/Requests to private, loopback, or link-local addresses/);
++    });
++
++    it('keeps the existing empty state when no feed has been loaded', () => {
++      http.expectOne('/api/german-police-feeds').flush(PRESET_FEEDS);
++      fixture.detectChanges();
++
++      const empty = fixture.nativeElement.querySelector('.empty');
++      expect(empty.textContent).toMatch(/No feed items loaded/);
++    });
++
++    it('renders item descriptions as HTML via the existing innerHTML binding', () => {
++      flushPoliceFeeds();
++      setCustomUrl(CUSTOM_URL);
++      submit();
++      flushCustomFeed([
++        {
++          title: 'Item 1',
++          link: 'https://example.com/1',
++          pubDate: 'today',
++          description: '<strong>Bold news</strong>',
++        },
++      ]);
++
++      fixture.nativeElement.querySelector('ul.feed-items a.feed-title').click();
++      fixture.detectChanges();
++      http
++        .expectOne({ method: 'POST', url: '/api/openrouter-chat' })
++        .flush({ choices: [{ message: { content: 'analysis' } }] });
++      http
++        .expectOne({ method: 'POST', url: '/api/analyze-rss-feed' })
++        .flush({ choices: [{ message: { content: '{"summary":"ok"}' } }] });
++      fixture.detectChanges();
++
++      const description = fixture.nativeElement.querySelector('.details .description');
++      expect(description.querySelector('strong')).toBeTruthy();
++      expect(description.textContent.trim()).toBe('Bold news');
++    });
++  });
++});
+diff --git a/src/app/rss-feed.component.ts b/src/app/rss-feed.component.ts
+index 8ff31e8..56859ab 100644
+--- a/src/app/rss-feed.component.ts
++++ b/src/app/rss-feed.component.ts
+@@ -3,12 +3,24 @@ import { CommonModule } from '@angular/common';
+ import { FormsModule } from '@angular/forms';
+ import { HttpClient, HttpClientModule } from '@angular/common/http';
+ 
+-interface PoliceFeed {
++export interface PoliceFeed {
+   name: string;
+   url: string;
+   description: string;
+ }
+ 
++/** Maximum number of items rendered from a pasted custom feed. */
++const MAX_CUSTOM_FEED_ITEMS = 100;
++
++function isValidHttpUrl(value: string): boolean {
++  try {
++    const parsed = new URL(value);
++    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
++  } catch {
++    return false;
++  }
++}
++
+ @Component({
+   selector: 'app-rss-feed',
+   standalone: true,
+@@ -28,12 +40,21 @@ export class RssFeedComponent implements OnInit {
+   selectedFeed: PoliceFeed | null = null;
+   feedAnalysis: any = null;
+   loadingAnalysis = false;
++  customFeedUrl = '';
+   defaultFeed: PoliceFeed = {
+     name: 'Polizei Sachsen',
+     url: 'https://www.polizei.sachsen.de/de/presse_rss_pdl.xml',
+     description: 'Official police feed from Saxony'  };
+ 
+   constructor(private http: HttpClient) {}
++
++  /**
++   * Submit is possible while a preset is selected (as before) or while a
++   * custom feed URL has been pasted in.
++   */
++  get canSubmitFeed(): boolean {
++    return !this.loading && (this.selectedFeed !== null || this.customFeedUrl.trim() !== '');
++  }
+     ngOnInit() {
+     // Load the list of police feeds when component initializes
+     this.loadPoliceFeeds();
+@@ -60,22 +81,45 @@ export class RssFeedComponent implements OnInit {
+       }
+     });
+   }  fetchFeed() {
++    const customUrl = this.customFeedUrl.trim();
++    if (customUrl) {
++      if (!isValidHttpUrl(customUrl)) {
++        this.error = 'Enter a valid http(s) URL';
++        return;
++      }
++      this.loadFeed(customUrl, customUrl);
++      return;
++    }
++
+     if (!this.selectedFeed) {
+       this.error = 'Please select a feed first';
+       return;
+     }
+ 
++    this.loadFeed(this.selectedFeed.url);
++  }
++
++  private loadFeed(feedUrl: string, customUrl?: string) {
+     this.loading = true;
+     this.error = null;
+     this.feedItems = [];
+     this.feedAnalysis = null; // Reset any previous feed analysis
+ 
+     // All feeds are now treated as external URLs
+-    const endpoint = `/api/custom-rss?url=${encodeURIComponent(this.selectedFeed.url)}`;
++    const endpoint = `/api/custom-rss?url=${encodeURIComponent(feedUrl)}`;
+ 
+     this.http.get<any[]>(endpoint).subscribe({
+       next: (items) => {
+-        this.feedItems = items;
++        if (customUrl) {
++          this.feedItems = items.slice(0, MAX_CUSTOM_FEED_ITEMS);
++          this.selectedFeed = {
++            name: new URL(customUrl).hostname,
++            url: customUrl,
++            description: 'Custom feed',
++          };
++        } else {
++          this.feedItems = items;
++        }
+         this.loading = false;
+       },
+       error: (err) => {
+diff --git a/src/custom-rss-url-guard.ts b/src/custom-rss-url-guard.ts
+new file mode 100644
+index 0000000..81789ab
+--- /dev/null
++++ b/src/custom-rss-url-guard.ts
+@@ -0,0 +1,204 @@
++import { promises as dnsPromises } from 'node:dns';
++
++/**
++ * DNS lookup function used to resolve feed hostnames. Takes an options object
++ * with `all: true` so every resolved address is checked. Replaceable in tests
++ * so no live network call is made.
++ */
++export type HostLookup = (
++  hostname: string,
++  options: { all: true },
++) => Promise<Array<{ address: string; family: number }>>;
++
++const defaultLookup: HostLookup = (hostname, options) => dnsPromises.lookup(hostname, options);
++
++export type UrlCheck = { ok: true; url: URL } | { ok: false; error: string };
++
++/** Resolved addresses from `ensurePublicHost`, safe to pin for the outbound fetch. */
++export type ResolvedAddress = { address: string; family: number };
++
++export type HostCheck =
++  | { ok: true; addresses: ResolvedAddress[] }
++  | { ok: false; error: string };
++
++/** IPv4 ranges (as [min, max] integers) that must not be requested. */
++const RESTRICTED_IPV4_RANGES: Array<[number, number]> = [
++  [0x00000000, 0x00ffffff], // 0.0.0.0/8 "this network" (reaches loopback on Linux)
++  [0x7f000000, 0x7fffffff], // 127.0.0.0/8 loopback
++  [0x0a000000, 0x0affffff], // 10.0.0.0/8 private
++  [0xac100000, 0xac1fffff], // 172.16.0.0/12 private
++  [0xc0a80000, 0xc0a8ffff], // 192.168.0.0/16 private
++  [0xa9fe0000, 0xa9feffff], // 169.254.0.0/16 link-local
++];
++
++const IPV6_UNSPECIFIED = 0n;
++const IPV6_LOOPBACK = 1n;
++const IPV6_UNIQUE_LOCAL_MIN = 0xfc000000000000000000000000000000n; // fc00::/7
++const IPV6_UNIQUE_LOCAL_MAX = 0xfdffffffffffffffffffffffffffffffn;
++const IPV6_LINK_LOCAL_MIN = 0xfe800000000000000000000000000000n; // fe80::/10
++const IPV6_LINK_LOCAL_MAX = 0xfebfffffffffffffffffffffffffffffn;
++
++/**
++ * Checks that the pasted feed URL parses and uses the http or https scheme.
++ * Used by the /api/custom-rss handler before any feed is fetched.
++ */
++export function validateCustomRssUrl(rawUrl: string): UrlCheck {
++  let url: URL;
++  try {
++    url = new URL(rawUrl);
++  } catch {
++    return { ok: false, error: 'Invalid URL format' };
++  }
++
++  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
++    return { ok: false, error: 'Only http and https URLs are allowed' };
++  }
++
++  return { ok: true, url };
++}
++
++/**
++ * Resolves the hostname of an http(s) URL and rejects targets that resolve to
++ * private, loopback, or link-local addresses, so the server is not tricked into
++ * requesting internal hosts. Used by the /api/custom-rss handler before the
++ * feed is fetched.
++ */
++export async function ensurePublicHost(
++  url: URL,
++  lookup: HostLookup = defaultLookup,
++): Promise<HostCheck> {
++  // IPv6 literals are wrapped in brackets in URL.hostnames.
++  const hostname = url.hostname.replace(/^\[(.+)\]$/, '$1');
++
++  let addresses: Array<{ address: string; family: number }>;
++  try {
++    addresses = await lookup(hostname, { all: true });
++  } catch {
++    addresses = [];
++  }
++
++  if (addresses.length === 0) {
++    return { ok: false, error: `Could not resolve host: ${hostname}` };
++  }
++
++  if (addresses.some((entry) => isRestrictedAddress(entry.address, entry.family))) {
++    return {
++      ok: false,
++      error: 'Requests to private, loopback, or link-local addresses are not allowed',
++    };
++  }
++
++  return { ok: true, addresses };
++}
++
++function isRestrictedAddress(address: string, family: number): boolean {
++  if (family === 4) {
++    return isRestrictedIpv4(address);
++  }
++  if (family === 6) {
++    return isRestrictedIpv6(address);
++  }
++  return false;
++}
++
++function isRestrictedIpv4(address: string): boolean {
++  const value = parseIpv4(address);
++  if (value === null) {
++    return false;
++  }
++  return RESTRICTED_IPV4_RANGES.some(([min, max]) => value >= min && value <= max);
++}
++
++function parseIpv4(address: string): number | null {
++  const parts = address.split('.');
++  if (parts.length !== 4) {
++    return null;
++  }
++  let value = 0;
++  for (const part of parts) {
++    if (!/^\d+$/.test(part)) {
++      return null;
++    }
++    const octet = Number(part);
++    if (octet > 255) {
++      return null;
++    }
++    value = value * 256 + octet;
++  }
++  return value;
++}
++
++function isRestrictedIpv6(address: string): boolean {
++  const value = parseIpv6(address);
++  if (value === null) {
++    return false;
++  }
++  if (
++    value === IPV6_UNSPECIFIED ||
++    value === IPV6_LOOPBACK ||
++    (value >= IPV6_UNIQUE_LOCAL_MIN && value <= IPV6_UNIQUE_LOCAL_MAX) ||
++    (value >= IPV6_LINK_LOCAL_MIN && value <= IPV6_LINK_LOCAL_MAX)
++  ) {
++    return true;
++  }
++  // IPv4-mapped (::ffff:a.b.c.d) and IPv4-compatible (::a.b.c.d) forms embed an
++  // IPv4 address in their low 32 bits; it must pass the IPv4 restrictions too.
++  const embeddedIpv4 = embeddedIpv4Of(value);
++  return embeddedIpv4 !== null && isRestrictedIpv4(embeddedIpv4);
++}
++
++/**
++ * Returns the dotted quad embedded in an IPv4-mapped or IPv4-compatible IPv6
++ * address, or null when the address does not embed an IPv4 address.
++ */
++function embeddedIpv4Of(value: bigint): string | null {
++  const high = value >> 32n;
++  if (high !== 0n && high !== 0xffffn) {
++    return null;
++  }
++  const ipv4 = value & 0xffffffffn;
++  const octet = (shift: bigint) => ((ipv4 >> shift) & 0xffn).toString();
++  return `${octet(24n)}.${octet(16n)}.${octet(8n)}.${octet(0n)}`;
++}
++
++function parseIpv6(address: string): bigint | null {
++  const sections = address.split('::');
++  if (sections.length > 2) {
++    return null;
++  }
++  const head = sections[0] ? sections[0].split(':') : [];
++  const tail = sections.length === 2 && sections[1] ? sections[1].split(':') : [];
++
++  // Expand an embedded IPv4 suffix (e.g. ::ffff:192.168.0.1) into hex groups.
++  const lastGroups = tail.length > 0 ? tail : head;
++  const lastGroup = lastGroups[lastGroups.length - 1];
++  if (lastGroup && lastGroup.includes('.')) {
++    const value = parseIpv4(lastGroup);
++    if (value === null) {
++      return null;
++    }
++    const hexGroups = [((value >> 16) & 0xffff).toString(16), (value & 0xffff).toString(16)];
++    if (tail.length > 0) {
++      tail.splice(-1, 1, ...hexGroups);
++    } else {
++      head.splice(-1, 1, ...hexGroups);
++    }
++  }
++
++  if (head.length + tail.length > 8) {
++    return null;
++  }
++  const groups = [...head, ...Array<string>(8 - head.length - tail.length).fill('0'), ...tail];
++  if (sections.length === 1 && groups.length !== 8) {
++    return null;
++  }
++
++  let value = 0n;
++  for (const group of groups) {
++    if (!/^[0-9a-fA-F]{1,4}$/.test(group)) {
++      return null;
++    }
++    value = (value << 16n) | BigInt(parseInt(group, 16));
++  }
++  return value;
++}
+diff --git a/src/openrouter-client.ts b/src/openrouter-client.ts
+index 97910d1..929aa64 100644
+--- a/src/openrouter-client.ts
++++ b/src/openrouter-client.ts
+@@ -1,5 +1,62 @@
+ import { parseStringPromise } from 'xml2js';
+ import * as FlexSearch from 'flexsearch';
++import type { ResolvedAddress } from './custom-rss-url-guard';
++import type { Client } from 'undici';
++import { buildConnector, Client as UndiciClient, fetch as undiciFetch } from 'undici';
++
++function createPinnedConnector(addresses: ResolvedAddress[], servername: string) {
++  const pinnedHosts = addresses.map((entry) =>
++    entry.family === 6 ? `[${entry.address}]` : entry.address,
++  );
++
++  return buildConnector({
++    keepAlive: true,
++    ...(pinnedHosts.length === 1
++      ? {
++          lookup: (_hostname, opts, cb) => {
++            if (opts.all) {
++              cb(
++                null,
++                pinnedHosts.map((_host, index) => ({
++                  address: addresses[index]!.address,
++                  family: addresses[index]!.family,
++                })),
++              );
++            } else {
++              cb(null, pinnedHosts[0]!, addresses[0]!.family);
++            }
++          },
++        }
++      : {
++          lookup: (_hostname, opts, cb) => {
++            if (!opts.all) {
++              const index = 0;
++              cb(null, pinnedHosts[index]!, addresses[index]!.family);
++              return;
++            }
++
++            cb(
++              null,
++              pinnedHosts.map((_host, index) => ({
++                address: addresses[index]!.address,
++                family: addresses[index]!.family,
++              })),
++            );
++          },
++        }),
++    servername,
++  });
++}
++
++function createPinnedRssFetchClient(feedUrl: URL, addresses: ResolvedAddress[]): UndiciClient {
++  const servername = feedUrl.hostname.startsWith('[')
++    ? feedUrl.hostname.slice(1, -1)
++    : feedUrl.hostname;
++
++  return new UndiciClient(feedUrl.origin, {
++    connect: createPinnedConnector(addresses, servername),
++  });
++}
+ 
+ export interface OpenRouterResponse {
+   choices: Array<{
+@@ -517,21 +574,34 @@ export class OpenRouterClient {
+    * @param url The RSS feed URL.
+    * @returns An array of RSS feed items (title, link, pubDate, description, etc).
+    */
+-  async readRssFeed(url: string): Promise<Array<{ title: string; link: string; pubDate: string; description: string }>> {
++  async readRssFeed(
++    url: string,
++    resolvedAddresses?: ResolvedAddress[],
++  ): Promise<Array<{ title: string; link: string; pubDate: string; description: string }>> {
++    const feedUrl = new URL(url);
++    const controller = new AbortController();
++    const timeoutId = setTimeout(() => controller.abort(), 8000); // 8 second timeout
++
++    let pinnedClient: Client | undefined;
++
+     try {
+-      const controller = new AbortController();
+-      const timeoutId = setTimeout(() => controller.abort(), 8000); // 8 second timeout
++      if (resolvedAddresses && resolvedAddresses.length > 0) {
++        pinnedClient = createPinnedRssFetchClient(feedUrl, resolvedAddresses);
++      }
+ 
+-      const response = await fetch(url, {
++      const response = await undiciFetch(url, {
+         method: 'GET',
++        // Do not follow redirects: only this URL was host-checked, a 3xx
++        // could point the fetch at an internal (private/loopback) target.
++        redirect: 'error',
+         signal: controller.signal,
+         headers: {
+-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+-        }
++          'User-Agent':
++            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
++        },
++        dispatcher: pinnedClient,
+       });
+ 
+-      clearTimeout(timeoutId);
+-
+       if (!response.ok) {
+         throw new Error(`Failed to fetch RSS feed (${response.status}): ${await response.text()}`);
+       }
+@@ -547,7 +617,7 @@ export class OpenRouterClient {
+         explicitArray: false,
+         trim: true,
+         normalizeTags: true,
+-        normalize: true
++        normalize: true,
+       });
+ 
+       // Handle different RSS formats
+@@ -570,14 +640,14 @@ export class OpenRouterClient {
+       const itemArray = Array.isArray(items) ? items : [items];
+ 
+       // Map different formats to our consistent structure
+-      return itemArray.map(item => {
++      return itemArray.map((item) => {
+         // Handle Atom format differently
+         if (parsed.feed && parsed.feed.entry) {
+           return {
+             title: item.title?._?.trim() || item.title || '',
+             link: item.link?.href || item.link || '',
+             pubDate: item.published || item.updated || '',
+-            description: item.summary || item.content || ''
++            description: item.summary || item.content || '',
+           };
+         }
+ 
+@@ -591,10 +661,14 @@ export class OpenRouterClient {
+     } catch (error) {
+       console.error(`Error fetching/parsing RSS feed from ${url}:`, error);
+       throw error;
++    } finally {
++      clearTimeout(timeoutId);
++      if (pinnedClient) {
++        await pinnedClient.close();
++      }
+     }
+   }
+ 
+-
+   async getGermanPoliceRssFeeds(): Promise<Array<{ name: string; url: string; description: string }>> {
+     //try {
+       console.log('Requesting German police RSS feeds from OpenRouter');
+diff --git a/src/server.ts b/src/server.ts
+index 2cebc10..2016d88 100644
+--- a/src/server.ts
++++ b/src/server.ts
+@@ -1,6 +1,7 @@
+ import { AngularAppEngine, createRequestHandler } from '@angular/ssr'
+ import { getContext } from '@netlify/angular-runtime/app-engine.js'
+ import { OpenRouterClient } from './openrouter-client';
++import { ensurePublicHost, validateCustomRssUrl } from './custom-rss-url-guard';
+ require('dotenv').config();
+ 
+ const angularAppEngine = new AngularAppEngine();
+@@ -84,15 +85,20 @@ export async function netlifyAppEngineHandler(request: Request): Promise<Respons
+ 
+       console.log(`Fetching custom RSS feed: ${urlParam}`);
+ 
+-      // Validate URL format
+-      try {
+-        new URL(urlParam);
+-      } catch (e) {
+-        return Response.json({ error: 'Invalid URL format' }, { status: 400 });
++      // Validate URL format and scheme (only http/https may be fetched)
++      const urlCheck = validateCustomRssUrl(urlParam);
++      if (!urlCheck.ok) {
++        return Response.json({ error: urlCheck.error }, { status: 400 });
+       }
+ 
+-      // Read and parse the RSS feed
+-      const items = await openrouter.readRssFeed(urlParam);
++      // Resolve the hostname and reject private, loopback, and link-local targets
++      const hostCheck = await ensurePublicHost(urlCheck.url);
++      if (!hostCheck.ok) {
++        return Response.json({ error: hostCheck.error }, { status: 400 });
++      }
++
++      // Read and parse the RSS feed, pinning TCP to the addresses the guard accepted
++      const items = await openrouter.readRssFeed(urlParam, hostCheck.addresses);
+       return Response.json(items);
+     } catch (error) {
+       const message = error instanceof Error ? error.message : 'Custom RSS feed error';
+diff --git a/tsconfig.server-tests.json b/tsconfig.server-tests.json
+new file mode 100644
+index 0000000..6adb296
+--- /dev/null
++++ b/tsconfig.server-tests.json
+@@ -0,0 +1,17 @@
++{
++  /* Compiles src/server.ts and the /api/custom-rss handler tests for Node's
++     built-in test runner (`npm run test:server`). The output lives inside the
++     gitignored node_modules directory and is never shipped. */
++  "extends": "./tsconfig.json",
++  "compilerOptions": {
++    "module": "commonjs",
++    "moduleResolution": "node",
++    "outDir": "./node_modules/.server-test-build",
++    "types": ["node"]
++  },
++  "include": [
++    "src/server.ts",
++    "src/openrouter-client.ts",
++    "server-tests/**/*.ts"
++  ]
++}
