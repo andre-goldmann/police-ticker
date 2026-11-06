@@ -7,6 +7,7 @@
     "build": "ng build",
     "watch": "ng build --watch --configuration development",
     "test": "ng test",
+    "test:server": "tsc -p tsconfig.server-tests.json && cd node_modules/.server-test-build && node --test server-tests/custom-rss.test.js server-tests/rss-redirect.test.js server-tests/pinned-connect.test.js",
     "serve:ssr:police-ticker": "node dist/police-ticker/server/server.mjs"
   },
   "private": true,
@@ -22,15 +23,16 @@
     "@angular/platform-server": "^19.2.0",
     "@angular/router": "^19.2.0",
     "@angular/ssr": "^19.2.6",
+    "@netlify/angular-runtime": "^4.0.0",
     "dotenv": "^16.5.0",
     "express": "^4.18.2",
     "flexsearch": "^0.8.204",
     "rss-parser": "^3.13.0",
     "rxjs": "~7.8.0",
     "tslib": "^2.3.0",
+    "undici": "^6.29.1",
     "xml2js": "^0.6.2",
-    "zone.js": "~0.15.0",
-    "@netlify/angular-runtime": "^4.0.0"
+    "zone.js": "~0.15.0"
   },
   "devDependencies": {
     "@angular-devkit/build-angular": "^19.2.6",

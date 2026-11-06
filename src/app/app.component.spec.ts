@@ -20,10 +20,10 @@ describe('AppComponent', () => {
     expect(app.title).toEqual('police-ticker');
   });
 
-  it('should render title', () => {
+  it('should render the RSS feed shell', () => {
     const fixture = TestBed.createComponent(AppComponent);
     fixture.detectChanges();
     const compiled = fixture.nativeElement as HTMLElement;
-    expect(compiled.querySelector('h1')?.textContent).toContain('Hello, police-ticker');
+    expect(compiled.querySelector('app-rss-feed')).toBeTruthy();
   });
 });

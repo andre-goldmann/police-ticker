@@ -3,10 +3,22 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { HttpClient, HttpClientModule } from '@angular/common/http';
 
-interface PoliceFeed {
+export interface PoliceFeed {
   name: string;
   url: string;
   description: string;
+}
+
+/** Maximum number of items rendered from a pasted custom feed. */
+const MAX_CUSTOM_FEED_ITEMS = 100;
+
+function isValidHttpUrl(value: string): boolean {
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  } catch {
+    return false;
+  }
 }
 
 @Component({
@@ -28,13 +40,24 @@ export class RssFeedComponent implements OnInit {
   selectedFeed: PoliceFeed | null = null;
   feedAnalysis: any = null;
   loadingAnalysis = false;
+  customFeedUrl = '';
   defaultFeed: PoliceFeed = {
     name: 'Polizei Sachsen',
     url: 'https://www.polizei.sachsen.de/de/presse_rss_pdl.xml',
-    description: 'Official police feed from Saxony'  };
+    description: 'Official police feed from Saxony',
+  };
 
   constructor(private http: HttpClient) {}
-    ngOnInit() {
+
+  /**
+   * Submit is possible while a preset is selected (as before) or while a
+   * custom feed URL has been pasted in.
+   */
+  get canSubmitFeed(): boolean {
+    return !this.loading && (this.selectedFeed !== null || this.customFeedUrl.trim() !== '');
+  }
+
+  ngOnInit() {
     // Load the list of police feeds when component initializes
     this.loadPoliceFeeds();
   }
@@ -59,23 +82,48 @@ export class RssFeedComponent implements OnInit {
         this.loadingFeeds = false;
       }
     });
-  }  fetchFeed() {
+  }
+
+  fetchFeed() {
+    const customUrl = this.customFeedUrl.trim();
+    if (customUrl) {
+      if (!isValidHttpUrl(customUrl)) {
+        this.error = 'Enter a valid http(s) URL';
+        return;
+      }
+      this.loadFeed(customUrl, customUrl);
+      return;
+    }
+
     if (!this.selectedFeed) {
       this.error = 'Please select a feed first';
       return;
     }
 
+    this.loadFeed(this.selectedFeed.url);
+  }
+
+  private loadFeed(feedUrl: string, customUrl?: string) {
     this.loading = true;
     this.error = null;
     this.feedItems = [];
     this.feedAnalysis = null; // Reset any previous feed analysis
 
     // All feeds are now treated as external URLs
-    const endpoint = `/api/custom-rss?url=${encodeURIComponent(this.selectedFeed.url)}`;
+    const endpoint = `/api/custom-rss?url=${encodeURIComponent(feedUrl)}`;
 
     this.http.get<any[]>(endpoint).subscribe({
       next: (items) => {
-        this.feedItems = items;
+        if (customUrl) {
+          this.feedItems = items.slice(0, MAX_CUSTOM_FEED_ITEMS);
+          this.selectedFeed = {
+            name: new URL(customUrl).hostname,
+            url: customUrl,
+            description: 'Custom feed',
+          };
+        } else {
+          this.feedItems = items;
+        }
         this.loading = false;
       },
       error: (err) => {
@@ -175,7 +223,9 @@ export class RssFeedComponent implements OnInit {
         this.loadingAnalysis = false;
       }
     });
-  }  showDetails(index: number, event: Event) {
+  }
+
+  showDetails(index: number, event: Event) {
     event.preventDefault();
 
     // If clicking on the currently selected item, toggle it off

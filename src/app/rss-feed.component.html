@@ -11,7 +11,13 @@
           </option>
         </select>
       </div>
-      <button type="submit" [disabled]="loading || !selectedFeed">Load Selected Feed</button>
+      <input
+        type="text"
+        name="customFeedUrl"
+        [(ngModel)]="customFeedUrl"
+        placeholder="Or paste a custom RSS feed URL"
+      />
+      <button type="submit" [disabled]="!canSubmitFeed">Load Selected Feed</button>
     </form>
   </div>
   
