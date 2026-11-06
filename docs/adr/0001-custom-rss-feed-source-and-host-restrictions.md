@@ -27,9 +27,12 @@ reach services inside the deployment network (SSRF).
   `::`) are included because a connection to them reaches loopback on Linux.
   IPv4-mapped and IPv4-compatible IPv6 forms (e.g. `::ffff:192.168.0.1`) are
   checked by extracting their embedded IPv4 address and applying the same
-  IPv4 ranges. Rejected requests get a 400 response with a JSON `error` body,
-  and `readRssFeed()` is never called for them. DNS resolution is injected
-  into the guard, so tests can stub it without live network calls.
+  IPv4 ranges. IPv6 addresses returned from `dns.lookup` may include a scoped
+  zone id suffix (e.g. `fe80::a%eth0`); that suffix is stripped before parsing
+  so scoped link-local addresses are not misclassified as public. Rejected
+  requests get a 400 response with a JSON `error` body, and `readRssFeed()` is
+  never called for them. DNS resolution is injected into the guard, so tests can
+  stub it without live network calls.
 - After the guard passes, the outbound feed fetch connects to **only** those
   accepted resolved addresses (Undici `fetch` with a pinned `lookup` and the
   original URL string unchanged), so `Host` and TLS SNI stay aligned with the
@@ -51,4 +54,3 @@ reach services inside the deployment network (SSRF).
 - DNS rebinding between validation and connect is mitigated: the TCP connection
   uses the same addresses the guard already accepted, without trusting a second
   resolver pass for that hostname.
-

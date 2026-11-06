@@ -154,6 +154,18 @@ describe('/api/custom-rss', () => {
       assert.equal(readRssFeedCalls.length, 0);
     });
 
+    it('responds 400 and does not call readRssFeed when the host resolves to a link-local IPv6 address with a zone id', async () => {
+      stubLookup(resolvesTo([{ address: 'fe80::a%eth0', family: 6 }]));
+      const feedUrl = 'http://scoped-linklocal.example.com/feed.xml';
+
+      const response = await callHandler(feedUrl);
+
+      assert.equal(response.status, 400, `${feedUrl} should be rejected`);
+      const body = await response.json();
+      assert.equal(typeof body.error, 'string');
+      assert.equal(readRssFeedCalls.length, 0);
+    });
+
     it('responds 400 and does not call readRssFeed when the host resolves to an IPv4-mapped or IPv4-compatible IPv6 address', async () => {
       const cases: Array<[string, Array<{ address: string; family: number }>]> = [
         ['http://mappedprivate.example.com/feed.xml', [{ address: '::ffff:192.168.0.1', family: 6 }]],
@@ -216,4 +228,3 @@ describe('/api/custom-rss', () => {
     });
   });
 });
-

@@ -109,27 +109,18 @@ function isRestrictedIpv4(address: string): boolean {
   return RESTRICTED_IPV4_RANGES.some(([min, max]) => value >= min && value <= max);
 }
 
-function parseIpv4(address: string): number | null {
-  const parts = address.split('.');
-  if (parts.length !== 4) {
-    return null;
-  }
-  let value = 0;
-  for (const part of parts) {
-    if (!/^\d+$/.test(part)) {
-      return null;
-    }
-    const octet = Number(part);
-    if (octet > 255) {
-      return null;
-    }
-    value = value * 256 + octet;
-  }
-  return value;
+/**
+ * Strips an IPv6 zone identifier (`fe80::a%eth0` → `fe80::a`) so scoped
+ * link-local addresses are classified the same as unscoped ones.
+ */
+function stripIpv6ZoneId(address: string): string {
+  const zone = address.indexOf('%');
+  return zone === -1 ? address : address.slice(0, zone);
 }
 
 function isRestrictedIpv6(address: string): boolean {
-  const value = parseIpv6(address);
+  const withoutZone = stripIpv6ZoneId(address);
+  const value = parseIpv6(withoutZone);
   if (value === null) {
     return false;
   }
@@ -199,6 +190,25 @@ function parseIpv6(address: string): bigint | null {
       return null;
     }
     value = (value << 16n) | BigInt(parseInt(group, 16));
+  }
+  return value;
+}
+
+function parseIpv4(address: string): number | null {
+  const parts = address.split('.');
+  if (parts.length !== 4) {
+    return null;
+  }
+  let value = 0;
+  for (const part of parts) {
+    if (!/^\d+$/.test(part)) {
+      return null;
+    }
+    const octet = Number(part);
+    if (octet > 255) {
+      return null;
+    }
+    value = value * 256 + octet;
   }
   return value;
 }
