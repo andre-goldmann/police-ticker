@@ -29,7 +29,10 @@ reach services inside the deployment network (SSRF).
   checked by extracting their embedded IPv4 address and applying the same
   IPv4 ranges. Rejected requests get a 400 response with a JSON `error` body,
   and `readRssFeed()` is never called for them. DNS resolution is injected
-  into the guard, so tests can stub it without live network calls.
+  into the guard, so tests can stub it without live network calls. The fetch
+  inside `readRssFeed()` rejects redirects (`redirect: 'error'`): the guard
+  validates only the requested URL, so a 3xx to an internal target must not
+  be followed.
 
 ## Consequences
 
@@ -38,7 +41,9 @@ reach services inside the deployment network (SSRF).
   message surfaces through the existing client error banner.
 - The `file://` and fetch-internal-host vectors for this endpoint are closed;
   hosts are checked at request time over every resolved address, so literal
-  IPs and IPv4-mapped IPv6 forms are covered too.
+  IPs and IPv4-mapped IPv6 forms are covered too, and redirect responses are
+  rejected instead of followed, so a passing URL cannot bounce the fetch to
+  an internal target.
 - A hostname whose DNS changes between validation and fetch is out of scope;
   guarding against that (TOCTOU pinning) would require fetching through the
   resolved addresses themselves.
