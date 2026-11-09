@@ -376,3 +376,279 @@ describe('RssFeedComponent custom feeds', () => {
     });
   });
 });
+
+describe('RssFeedComponent refresh button', () => {
+  let fixture: ComponentFixture<RssFeedComponent>;
+  let component: RssFeedComponent;
+  let http: HttpTestingController;
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [RssFeedComponent],
+      providers: [provideHttpClient(), provideHttpClientTesting()],
+    })
+      // The test provides its own HttpClient so requests are intercepted.
+      .overrideComponent(RssFeedComponent, {
+        remove: { imports: [HttpClientModule] },
+      })
+      .compileComponents();
+
+    fixture = TestBed.createComponent(RssFeedComponent);
+    component = fixture.componentInstance;
+    http = TestBed.inject(HttpTestingController);
+    fixture.detectChanges();
+  });
+
+  afterEach(() => http.verify());
+
+  function flushPoliceFeeds() {
+    http.expectOne('/api/german-police-feeds').flush(PRESET_FEEDS);
+    fixture.detectChanges();
+  }
+
+  function setCustomUrl(value: string) {
+    const input: HTMLInputElement = fixture.nativeElement.querySelector(
+      'input[name="customFeedUrl"]',
+    );
+    input.value = value;
+    input.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+  }
+
+  function submit() {
+    const form: HTMLFormElement = fixture.nativeElement.querySelector('form.input-row');
+    form.dispatchEvent(new Event('submit'));
+    fixture.detectChanges();
+  }
+
+  function errorText(): string {
+    const element = fixture.nativeElement.querySelector('.error');
+    return element ? element.textContent.trim() : '';
+  }
+
+  function presetRequest(feed: PoliceFeed): string {
+    return `/api/custom-rss?url=${encodeURIComponent(feed.url)}`;
+  }
+
+  function refreshButton(): HTMLButtonElement {
+    return fixture.nativeElement.querySelector('button.refresh-feed');
+  }
+
+  function clickRefresh() {
+    refreshButton().click();
+    fixture.detectChanges();
+  }
+
+  function displayPresetFeed(feed: PoliceFeed) {
+    flushPoliceFeeds();
+    component.selectedFeed = feed;
+    setCustomUrl('');
+    submit();
+    http.expectOne(presetRequest(feed)).flush(TWO_ITEMS);
+    fixture.detectChanges();
+  }
+
+  function displayCustomFeed(items: FeedItem[] = TWO_ITEMS) {
+    flushPoliceFeeds();
+    setCustomUrl(CUSTOM_URL);
+    submit();
+    http.expectOne(CUSTOM_REQUEST).flush(items);
+    fixture.detectChanges();
+  }
+
+  function openItemDetail() {
+    fixture.nativeElement.querySelector('ul.feed-items a.feed-title').click();
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('.details')).toBeTruthy();
+  }
+
+  function flushDetailRequests() {
+    http
+      .expectOne({ method: 'POST', url: '/api/openrouter-chat' })
+      .flush({ choices: [{ message: { content: 'analysis' } }] });
+    http
+      .expectOne({ method: 'POST', url: '/api/analyze-rss-feed' })
+      .flush({ choices: [{ message: { content: '{"summary":"ok"}' } }] });
+    fixture.detectChanges();
+  }
+
+  describe('US1: refresh reloads the displayed feed', () => {
+    it('reloads the displayed preset feed via /api/custom-rss with that preset URL and renders the returned items', () => {
+      displayPresetFeed(PRESET_FEEDS[0]);
+
+      clickRefresh();
+
+      const request = http.expectOne(presetRequest(PRESET_FEEDS[0]));
+      expect(request.request.method).toBe('GET');
+      expect(request.request.urlWithParams).toContain(encodeURIComponent(PRESET_FEEDS[0].url));
+      request.flush(feedItems(3));
+      fixture.detectChanges();
+
+      const rendered = fixture.nativeElement.querySelectorAll('ul.feed-items li');
+      expect(rendered.length).toBe(3);
+      expect(rendered[2].textContent).toMatch(/Item 3/);
+    });
+
+    it('reloads the displayed custom feed with the pasted URL and keeps the 100-item cap', () => {
+      displayCustomFeed(TWO_ITEMS);
+
+      clickRefresh();
+
+      const request = http.expectOne(CUSTOM_REQUEST);
+      expect(request.request.urlWithParams).toContain(encodeURIComponent(CUSTOM_URL));
+      request.flush(feedItems(150));
+      fixture.detectChanges();
+
+      const rendered = fixture.nativeElement.querySelectorAll('ul.feed-items li');
+      expect(rendered.length).toBe(100);
+    });
+  });
+
+  describe('US2: refresh button availability and placement', () => {
+    it('renders a "Refresh" button inside the input row directly after the feed dropdown', () => {
+      flushPoliceFeeds();
+
+      const form = fixture.nativeElement.querySelector('form.input-row');
+      const button = form.querySelector('button.refresh-feed');
+      expect(button).toBeTruthy();
+      expect(button.textContent.trim()).toBe('Refresh');
+      expect(button.previousElementSibling).toBe(form.querySelector('.select-container'));
+    });
+
+    it('is visible and disabled when no feed has loaded', () => {
+      flushPoliceFeeds();
+
+      const button = refreshButton();
+      expect(button).toBeTruthy();
+      expect(button.disabled).toBe(true);
+    });
+
+    it('is enabled once a load succeeded', () => {
+      displayCustomFeed(TWO_ITEMS);
+
+      expect(refreshButton().disabled).toBe(false);
+    });
+
+    it('is disabled while a load is in flight and enabled again once it succeeds', () => {
+      flushPoliceFeeds();
+      setCustomUrl(CUSTOM_URL);
+      submit();
+      const request = http.expectOne(CUSTOM_REQUEST);
+
+      expect(refreshButton().disabled).toBe(true);
+
+      request.flush(TWO_ITEMS);
+      fixture.detectChanges();
+      expect(refreshButton().disabled).toBe(false);
+    });
+  });
+
+  describe('US3: refresh ignores unsubmitted edits', () => {
+    it('requests the tracked preset URL even after the dropdown selection changed without loading', () => {
+      displayPresetFeed(PRESET_FEEDS[0]);
+
+      component.selectedFeed = PRESET_FEEDS[1];
+      fixture.detectChanges();
+      expect(component.loadedFeed).toEqual({ url: PRESET_FEEDS[0].url, kind: 'preset' });
+
+      clickRefresh();
+
+      const request = http.expectOne(presetRequest(PRESET_FEEDS[0]));
+      http.expectNone(presetRequest(PRESET_FEEDS[1]));
+      request.flush(TWO_ITEMS);
+      fixture.detectChanges();
+      expect(component.feedItems.length).toBe(TWO_ITEMS.length);
+    });
+
+    it('requests the tracked custom URL even after typing a new URL without loading', () => {
+      displayCustomFeed(TWO_ITEMS);
+
+      setCustomUrl('https://other.example.net/rss.xml');
+      expect(component.loadedFeed).toEqual({ url: CUSTOM_URL, kind: 'custom' });
+
+      clickRefresh();
+
+      const request = http.expectOne(CUSTOM_REQUEST);
+      http.expectNone(
+        '/api/custom-rss?url=' + encodeURIComponent('https://other.example.net/rss.xml'),
+      );
+      request.flush(TWO_ITEMS);
+      fixture.detectChanges();
+    });
+  });
+
+  describe('US4: refresh resets transient state', () => {
+    it('collapses the open detail, clears items/error/analysis, and shows the spinner while refreshing', () => {
+      displayCustomFeed(TWO_ITEMS);
+      openItemDetail();
+      flushDetailRequests();
+
+      expect(component.selectedIndex).not.toBeNull();
+      expect(component.openrouterResponse).not.toBeNull();
+      expect(component.feedAnalysis).not.toBeNull();
+
+      clickRefresh();
+
+      expect(component.selectedIndex).toBeNull();
+      expect(component.openrouterResponse).toBeNull();
+      expect(component.feedItems).toEqual([]);
+      expect(component.error).toBeNull();
+      expect(component.feedAnalysis).toBeNull();
+      expect(fixture.nativeElement.querySelector('.details')).toBeNull();
+
+      const loading = fixture.nativeElement.querySelector('.loading');
+      expect(loading).toBeTruthy();
+      expect(loading.textContent).toMatch(/Loading feed items\.\.\./);
+      expect(loading.querySelector('.spinner')).toBeTruthy();
+
+      http.expectOne(CUSTOM_REQUEST).flush(TWO_ITEMS);
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelector('.loading')).toBeNull();
+    });
+  });
+
+  describe('US5: failed refresh shows the error', () => {
+    it('shows the server error message and an empty list when the refresh request fails', () => {
+      displayCustomFeed(TWO_ITEMS);
+
+      clickRefresh();
+      http.expectOne(CUSTOM_REQUEST).flush(
+        { error: 'Upstream feed is unavailable' },
+        { status: 502, statusText: 'Bad Gateway' },
+      );
+      fixture.detectChanges();
+
+      expect(fixture.nativeElement.querySelectorAll('ul.feed-items li').length).toBe(0);
+      expect(errorText()).toBe('Upstream feed is unavailable');
+    });
+
+    it('falls back to "Failed to load RSS feed." when the failure has no error message', () => {
+      displayCustomFeed(TWO_ITEMS);
+
+      clickRefresh();
+      http.expectOne(CUSTOM_REQUEST).flush(null, { status: 500, statusText: 'Server Error' });
+      fixture.detectChanges();
+
+      expect(fixture.nativeElement.querySelectorAll('ul.feed-items li').length).toBe(0);
+      expect(errorText()).toBe('Failed to load RSS feed.');
+    });
+  });
+
+  describe('US6: shared load path collapses open detail', () => {
+    it('collapses an open item detail when "Load Selected Feed" reloads the preset', () => {
+      displayPresetFeed(PRESET_FEEDS[0]);
+      openItemDetail();
+      flushDetailRequests();
+
+      submit();
+
+      const request = http.expectOne(presetRequest(PRESET_FEEDS[0]));
+      expect(component.selectedIndex).toBeNull();
+      expect(component.openrouterResponse).toBeNull();
+      expect(fixture.nativeElement.querySelector('.details')).toBeNull();
+
+      request.flush(TWO_ITEMS);
+      fixture.detectChanges();
+    });
+  });
+});
