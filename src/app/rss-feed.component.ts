@@ -41,6 +41,13 @@ export class RssFeedComponent implements OnInit {
   feedAnalysis: any = null;
   loadingAnalysis = false;
   customFeedUrl = '';
+  /**
+   * The currently loaded feed — the one whose items are actually displayed.
+   * Tracked separately from the inputs because `selectedFeed` is overwritten
+   * by both the dropdown and successful custom loads; it only changes when a
+   * load succeeds, never through unsubmitted input edits.
+   */
+  loadedFeed: { url: string; kind: 'preset' | 'custom' } | null = null;
   defaultFeed: PoliceFeed = {
     name: 'Polizei Sachsen',
     url: 'https://www.polizei.sachsen.de/de/presse_rss_pdl.xml',
@@ -55,6 +62,14 @@ export class RssFeedComponent implements OnInit {
    */
   get canSubmitFeed(): boolean {
     return !this.loading && (this.selectedFeed !== null || this.customFeedUrl.trim() !== '');
+  }
+
+  /**
+   * Refresh is possible only while a feed is actually displayed and no load
+   * is in flight.
+   */
+  get canRefreshFeed(): boolean {
+    return this.loadedFeed !== null && !this.loading;
   }
 
   ngOnInit() {
@@ -103,11 +118,26 @@ export class RssFeedComponent implements OnInit {
     this.loadFeed(this.selectedFeed.url);
   }
 
+  /**
+   * Reload the currently loaded feed — preset or custom — ignoring any
+   * unsubmitted edits to the dropdown or the custom URL field.
+   */
+  refreshFeed() {
+    if (!this.loadedFeed || this.loading) {
+      return;
+    }
+    this.loadFeed(this.loadedFeed.url, this.loadedFeed.kind === 'custom' ? this.loadedFeed.url : undefined);
+  }
+
   private loadFeed(feedUrl: string, customUrl?: string) {
+    const kind: 'preset' | 'custom' = customUrl ? 'custom' : 'preset';
     this.loading = true;
     this.error = null;
     this.feedItems = [];
     this.feedAnalysis = null; // Reset any previous feed analysis
+    this.selectedIndex = null; // Collapse any open item detail
+    this.openrouterResponse = null;
+    this.loadingAnalysis = false;
 
     // All feeds are now treated as external URLs
     const endpoint = `/api/custom-rss?url=${encodeURIComponent(feedUrl)}`;
@@ -124,6 +154,7 @@ export class RssFeedComponent implements OnInit {
         } else {
           this.feedItems = items;
         }
+        this.loadedFeed = { url: feedUrl, kind };
         this.loading = false;
       },
       error: (err) => {
