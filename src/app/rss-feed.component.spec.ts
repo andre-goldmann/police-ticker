@@ -652,3 +652,170 @@ describe('RssFeedComponent refresh button', () => {
     });
   });
 });
+
+describe('RssFeedComponent feed header names the loaded feed', () => {
+  let fixture: ComponentFixture<RssFeedComponent>;
+  let component: RssFeedComponent;
+  let http: HttpTestingController;
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [RssFeedComponent],
+      providers: [provideHttpClient(), provideHttpClientTesting()],
+    })
+      // The test provides its own HttpClient so requests are intercepted.
+      .overrideComponent(RssFeedComponent, {
+        remove: { imports: [HttpClientModule] },
+      })
+      .compileComponents();
+
+    fixture = TestBed.createComponent(RssFeedComponent);
+    component = fixture.componentInstance;
+    http = TestBed.inject(HttpTestingController);
+    fixture.detectChanges();
+  });
+
+  afterEach(() => http.verify());
+
+  function flushPoliceFeeds() {
+    http.expectOne('/api/german-police-feeds').flush(PRESET_FEEDS);
+    fixture.detectChanges();
+  }
+
+  function setCustomUrl(value: string) {
+    const input: HTMLInputElement = fixture.nativeElement.querySelector(
+      'input[name="customFeedUrl"]',
+    );
+    input.value = value;
+    input.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+  }
+
+  function submit() {
+    const form: HTMLFormElement = fixture.nativeElement.querySelector('form.input-row');
+    form.dispatchEvent(new Event('submit'));
+    fixture.detectChanges();
+  }
+
+  function presetRequest(feed: PoliceFeed): string {
+    return `/api/custom-rss?url=${encodeURIComponent(feed.url)}`;
+  }
+
+  function customRequest(url: string): string {
+    return `/api/custom-rss?url=${encodeURIComponent(url)}`;
+  }
+
+  function displayPresetFeed(feed: PoliceFeed) {
+    flushPoliceFeeds();
+    component.selectedFeed = feed;
+    setCustomUrl('');
+    submit();
+    http.expectOne(presetRequest(feed)).flush(TWO_ITEMS);
+    fixture.detectChanges();
+  }
+
+  function displayCustomFeed() {
+    flushPoliceFeeds();
+    setCustomUrl(CUSTOM_URL);
+    submit();
+    http.expectOne(CUSTOM_REQUEST).flush(TWO_ITEMS);
+    fixture.detectChanges();
+  }
+
+  function feedInfoHeader(): { name: string; description: string } | null {
+    const info = fixture.nativeElement.querySelector('.feed-info');
+    if (!info) {
+      return null;
+    }
+    return {
+      name: info.querySelector('h3').textContent.trim(),
+      description: info.querySelector('p').textContent.trim(),
+    };
+  }
+
+  it('keeps showing the loaded preset name and description after the dropdown changes without loading', () => {
+    displayPresetFeed(PRESET_FEEDS[0]);
+    expect(feedInfoHeader()).toEqual({ name: 'Polizei Berlin', description: 'Berlin police feed' });
+
+    component.selectedFeed = PRESET_FEEDS[1];
+    fixture.detectChanges();
+    expect(feedInfoHeader()).toEqual({ name: 'Polizei Berlin', description: 'Berlin police feed' });
+
+    submit();
+    http.expectOne(presetRequest(PRESET_FEEDS[1])).flush(TWO_ITEMS);
+    fixture.detectChanges();
+    expect(feedInfoHeader()).toEqual({
+      name: 'Polizei Hamburg',
+      description: 'Hamburg police feed',
+    });
+  });
+
+  it('shows the built-in "Polizei Sachsen" default entry when the default preset is loaded', () => {
+    flushPoliceFeeds();
+    expect(component.selectedFeed).toBe(component.policeFeeds[0]);
+    submit();
+
+    http.expectOne(presetRequest(component.policeFeeds[0])).flush(TWO_ITEMS);
+    fixture.detectChanges();
+
+    expect(feedInfoHeader()).toEqual({
+      name: 'Polizei Sachsen',
+      description: 'Official police feed from Saxony',
+    });
+  });
+
+  it('keeps showing the loaded custom hostname and "Custom feed" after the dropdown or URL field change without loading', () => {
+    displayCustomFeed();
+    expect(feedInfoHeader()).toEqual({ name: 'example.com', description: 'Custom feed' });
+
+    component.selectedFeed = PRESET_FEEDS[1];
+    setCustomUrl('https://other.example.net/rss.xml');
+    expect(feedInfoHeader()).toEqual({ name: 'example.com', description: 'Custom feed' });
+
+    submit();
+    http.expectOne(customRequest('https://other.example.net/rss.xml')).flush(TWO_ITEMS);
+    fixture.detectChanges();
+    expect(feedInfoHeader()).toEqual({ name: 'other.example.net', description: 'Custom feed' });
+  });
+
+  it('falls back to the hostname when the loaded preset URL matches no dropdown entry', () => {
+    displayPresetFeed(PRESET_FEEDS[0]);
+    expect(feedInfoHeader()).toEqual({ name: 'Polizei Berlin', description: 'Berlin police feed' });
+
+    // The dropdown no longer knows the loaded preset URL.
+    component.policeFeeds = [PRESET_FEEDS[1]];
+    fixture.detectChanges();
+
+    expect(feedInfoHeader()).toEqual({ name: 'www.berlin.de', description: 'Custom feed' });
+  });
+
+  it('is absent while no feed items are loaded', () => {
+    flushPoliceFeeds();
+
+    expect(fixture.nativeElement.querySelector('.feed-info')).toBeNull();
+  });
+
+  it('is absent while a load is in flight and returns once the items are displayed', () => {
+    flushPoliceFeeds();
+    setCustomUrl(CUSTOM_URL);
+    submit();
+    expect(fixture.nativeElement.querySelector('.feed-info')).toBeNull();
+
+    http.expectOne(CUSTOM_REQUEST).flush(TWO_ITEMS);
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('.feed-info')).not.toBeNull();
+  });
+
+  it('is absent while a refresh is in flight and after a failed reload leaves no items', () => {
+    displayCustomFeed();
+    expect(fixture.nativeElement.querySelector('.feed-info')).not.toBeNull();
+
+    fixture.nativeElement.querySelector('button.refresh-feed').click();
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('.feed-info')).toBeNull();
+
+    http.expectOne(CUSTOM_REQUEST).flush(null, { status: 500, statusText: 'Server Error' });
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('.feed-info')).toBeNull();
+  });
+});
