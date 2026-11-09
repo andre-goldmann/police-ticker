@@ -42,9 +42,9 @@
     </svg>
     {{ error }}
   </div>
-  <div *ngIf="selectedFeed && feedItems.length" class="feed-info">
-    <h3>{{ selectedFeed.name }}</h3>
-    <p>{{ selectedFeed.description }}</p>
+  <div *ngIf="loadedFeed && feedItems.length" class="feed-info">
+    <h3>{{ loadedFeedInfo.name }}</h3>
+    <p>{{ loadedFeedInfo.description }}</p>
     <div class="feed-meta">
       <span>{{ feedItems.length }} item(s)</span>
     </div>

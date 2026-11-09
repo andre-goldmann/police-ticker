@@ -72,6 +72,28 @@ export class RssFeedComponent implements OnInit {
     return this.loadedFeed !== null && !this.loading;
   }
 
+  /**
+   * Header info for the currently loaded feed, derived only from `loadedFeed`
+   * so unsubmitted edits to the dropdown or the custom URL field cannot change
+   * it: presets are looked up by URL in `policeFeeds` (the built-in default
+   * included), while unknown preset URLs and custom feeds fall back to the
+   * URL's hostname with the generic "Custom feed" description.
+   */
+  get loadedFeedInfo(): { name: string; description: string } {
+    const loaded = this.loadedFeed;
+    if (!loaded) {
+      return { name: '', description: '' };
+    }
+    const preset =
+      loaded.kind === 'preset'
+        ? this.policeFeeds.find((feed) => feed.url === loaded.url)
+        : undefined;
+    if (preset) {
+      return { name: preset.name, description: preset.description };
+    }
+    return { name: new URL(loaded.url).hostname, description: 'Custom feed' };
+  }
+
   ngOnInit() {
     // Load the list of police feeds when component initializes
     this.loadPoliceFeeds();
