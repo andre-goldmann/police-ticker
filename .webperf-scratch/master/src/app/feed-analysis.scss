@@ -1,0 +1,50 @@
+.feed-analysis {
+  margin-top: 1.5rem;
+  padding-top: 1rem;
+  border-top: 1px solid #e0e6f5;
+  
+  h4 {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    color: #3498db;
+    margin-top: 0;
+    margin-bottom: 1rem;
+    
+    svg {
+      flex-shrink: 0;
+    }
+  }
+  
+  .loading-analysis {
+    display: flex;
+    align-items: center;
+    gap: 0.7rem;
+    color: #7f8c8d;
+    font-size: 0.9rem;
+    
+    .spinner {
+      width: 18px;
+      height: 18px;
+    }
+  }
+  
+  .analysis-content {
+    background: white;
+    padding: 1rem;
+    border-radius: 6px;
+    border: 1px solid #e0e6f5;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.03);
+    font-size: 0.95rem;
+    line-height: 1.5;
+    color: #34495e;
+    
+    pre {
+      background: #f8f9fc;
+      padding: 0.75rem;
+      border-radius: 4px;
+      overflow-x: auto;
+      font-size: 0.85rem;
+    }
+  }
+}

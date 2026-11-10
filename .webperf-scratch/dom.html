@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+  <script type="module" src="/@vite/client"></script>
+
+  <meta charset="utf-8">
+  <title>PoliceTicker</title>
+  <base href="/">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="icon" type="image/x-icon" href="favicon.ico">
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500&amp;display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+<link rel="stylesheet" href="styles.css"><style ng-style-reused="">
+
+.rss-feed-container[_ngcontent-ng-c1794211671] {
+  max-width: 600px;
+  margin: 2rem auto;
+  padding: 1rem;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+.feed-selection[_ngcontent-ng-c1794211671] {
+  background: #f5f8ff;
+  padding: 1rem;
+  border-radius: 6px;
+  border: 1px solid #e0e6f5;
+}
+.feed-selection[_ngcontent-ng-c1794211671]   h3[_ngcontent-ng-c1794211671] {
+  margin-top: 0;
+  margin-bottom: 1rem;
+  color: #2c3e50;
+  font-size: 1.2rem;
+}
+.input-row[_ngcontent-ng-c1794211671] {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.input-row[_ngcontent-ng-c1794211671]   .select-container[_ngcontent-ng-c1794211671] {
+  flex: 1;
+  min-width: 250px;
+}
+.input-row[_ngcontent-ng-c1794211671]   .select-container[_ngcontent-ng-c1794211671]   select[_ngcontent-ng-c1794211671] {
+  width: 100%;
+  padding: 0.6rem;
+  border-radius: 4px;
+  border: 1px solid #ccc;
+  background-color: white;
+  font-size: 0.95rem;
+}
+button[_ngcontent-ng-c1794211671] {
+  padding: 0.5rem 1rem;
+  border-radius: 4px;
+  border: none;
+  background: #1976d2;
+  color: #fff;
+  font-weight: bold;
+  cursor: pointer;
+}
+button[disabled][_ngcontent-ng-c1794211671] {
+  background: #bdbdbd;
+  cursor: not-allowed;
+}
+.loading[_ngcontent-ng-c1794211671] {
+  color: #1976d2;
+  font-style: italic;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.spinner[_ngcontent-ng-c1794211671] {
+  width: 18px;
+  height: 18px;
+  border: 2px solid #f3f3f3;
+  border-top: 2px solid #3498db;
+  border-radius: 50%;
+  animation: _ngcontent-ng-c1794211671_spin 0.8s linear infinite;
+}
+@keyframes _ngcontent-ng-c1794211671_spin {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+.loading-response[_ngcontent-ng-c1794211671] {
+  position: relative;
+  min-height: 40px;
+}
+.loading-response[_ngcontent-ng-c1794211671]:after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 20px;
+  height: 20px;
+  margin-left: -10px;
+  margin-top: -10px;
+  border: 2px solid #e0f2e0;
+  border-top: 2px solid #27ae60;
+  border-radius: 50%;
+  animation: _ngcontent-ng-c1794211671_spin 1s linear infinite;
+}
+.error[_ngcontent-ng-c1794211671] {
+  color: #d32f2f;
+  font-weight: bold;
+}
+.empty[_ngcontent-ng-c1794211671] {
+  color: #888;
+  font-style: italic;
+  text-align: center;
+  padding: 2rem 1rem;
+}
+.empty[_ngcontent-ng-c1794211671]   svg[_ngcontent-ng-c1794211671] {
+  opacity: 0.5;
+  margin-bottom: 1rem;
+}
+.empty[_ngcontent-ng-c1794211671]   p[_ngcontent-ng-c1794211671] {
+  margin: 0;
+}
+ul[_ngcontent-ng-c1794211671] {
+  list-style: none;
+  padding: 0;
+}
+li[_ngcontent-ng-c1794211671] {
+  margin-bottom: 1.5rem;
+  border-bottom: 1px solid #eee;
+  padding-bottom: 1rem;
+  transition: all 0.2s ease;
+  border-radius: 4px;
+  padding: 0.8rem;
+}
+li.selected[_ngcontent-ng-c1794211671] {
+  background-color: #f0f7ff;
+  border-left: 3px solid #3498db;
+}
+li[_ngcontent-ng-c1794211671]   a[_ngcontent-ng-c1794211671] {
+  color: #2980b9;
+  text-decoration: none;
+  font-weight: 500;
+  display: block;
+  margin-bottom: 0.3rem;
+}
+li[_ngcontent-ng-c1794211671]   a[_ngcontent-ng-c1794211671]:hover {
+  color: #1a5f89;
+  text-decoration: underline;
+}
+.pub-date[_ngcontent-ng-c1794211671] {
+  font-size: 0.9em;
+  color: #666;
+  margin-bottom: 0.5rem;
+}
+.no-search-results[_ngcontent-ng-c1794211671] {
+  color: #888;
+  font-style: italic;
+}
+.description[_ngcontent-ng-c1794211671] {
+  margin-top: 0.5rem;
+  color: #333;
+  line-height: 1.5;
+}
+.details[_ngcontent-ng-c1794211671] {
+  margin-top: 1rem;
+  padding-top: 0.8rem;
+  border-top: 1px dashed #e0e0e0;
+}
+.details[_ngcontent-ng-c1794211671]   .description[_ngcontent-ng-c1794211671] {
+  line-height: 1.5;
+}
+.details[_ngcontent-ng-c1794211671]   .read-original[_ngcontent-ng-c1794211671] {
+  display: inline-block;
+  margin: 0.8rem 0;
+  color: #e74c3c;
+  font-weight: 500;
+  text-decoration: none;
+}
+.details[_ngcontent-ng-c1794211671]   .read-original[_ngcontent-ng-c1794211671]:hover {
+  text-decoration: underline;
+}
+.details[_ngcontent-ng-c1794211671]   .openrouter-response[_ngcontent-ng-c1794211671] {
+  background-color: #f7fdf7;
+  padding: 1rem;
+  border-radius: 4px;
+  margin-top: 1rem;
+  border-left: 3px solid #27ae60;
+}
+.details[_ngcontent-ng-c1794211671]   .openrouter-response[_ngcontent-ng-c1794211671]   hr[_ngcontent-ng-c1794211671] {
+  border: none;
+  border-top: 1px solid #d5e8d5;
+  margin: 0.8rem 0;
+}
+.details[_ngcontent-ng-c1794211671]   .openrouter-response[_ngcontent-ng-c1794211671]   strong[_ngcontent-ng-c1794211671] {
+  color: #27ae60;
+}
+.details[_ngcontent-ng-c1794211671]   .openrouter-response[_ngcontent-ng-c1794211671]   h4[_ngcontent-ng-c1794211671] {
+  margin-top: 0.5rem;
+  margin-bottom: 1rem;
+  color: #2c3e50;
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+.details[_ngcontent-ng-c1794211671]   .openrouter-response[_ngcontent-ng-c1794211671]   h5[_ngcontent-ng-c1794211671] {
+  margin-top: 1rem;
+  margin-bottom: 0.5rem;
+  font-size: 1rem;
+  color: #27ae60;
+}
+.details[_ngcontent-ng-c1794211671]   .openrouter-response[_ngcontent-ng-c1794211671]   ul[_ngcontent-ng-c1794211671] {
+  margin: 0.5rem 0;
+  padding-left: 1.5rem;
+}
+.details[_ngcontent-ng-c1794211671]   .openrouter-response[_ngcontent-ng-c1794211671]   ul[_ngcontent-ng-c1794211671]   li[_ngcontent-ng-c1794211671] {
+  border: none;
+  padding: 0.2rem 0;
+  margin-bottom: 0.3rem;
+  font-size: 0.9rem;
+}
+.feed-info[_ngcontent-ng-c1794211671] {
+  background: #f9f9f9;
+  padding: 1rem;
+  border-radius: 6px;
+  border-left: 4px solid #3498db;
+  margin-bottom: 1rem;
+}
+.feed-info[_ngcontent-ng-c1794211671]   h3[_ngcontent-ng-c1794211671] {
+  margin-top: 0;
+  margin-bottom: 0.5rem;
+  color: #2c3e50;
+}
+.feed-info[_ngcontent-ng-c1794211671]   p[_ngcontent-ng-c1794211671] {
+  margin: 0;
+  color: #7f8c8d;
+  font-size: 0.9rem;
+}
+.feed-info[_ngcontent-ng-c1794211671]   .feed-search[_ngcontent-ng-c1794211671] {
+  width: 100%;
+  margin-top: 0.6rem;
+  padding: 0.5rem 0.6rem;
+  border-radius: 4px;
+  border: 1px solid #ccc;
+  font-size: 0.95rem;
+}
+.feed-info[_ngcontent-ng-c1794211671]   .feed-analysis[_ngcontent-ng-c1794211671] {
+  margin-top: 1rem;
+}
+.feed-info[_ngcontent-ng-c1794211671]   .feed-analysis[_ngcontent-ng-c1794211671]   strong[_ngcontent-ng-c1794211671] {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: #27ae60;
+  margin-top: 0;
+  margin-bottom: 1rem;
+}
+.feed-info[_ngcontent-ng-c1794211671]   .feed-analysis[_ngcontent-ng-c1794211671]   strong[_ngcontent-ng-c1794211671]   svg[_ngcontent-ng-c1794211671] {
+  flex-shrink: 0;
+}
+.feed-info[_ngcontent-ng-c1794211671]   .feed-analysis[_ngcontent-ng-c1794211671]   .loading-analysis[_ngcontent-ng-c1794211671] {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  color: #7f8c8d;
+  font-size: 0.9rem;
+}
+.feed-info[_ngcontent-ng-c1794211671]   .feed-analysis[_ngcontent-ng-c1794211671]   .loading-analysis[_ngcontent-ng-c1794211671]   .spinner[_ngcontent-ng-c1794211671] {
+  width: 18px;
+  height: 18px;
+}
+.feed-info[_ngcontent-ng-c1794211671]   .feed-analysis[_ngcontent-ng-c1794211671]   .analysis-content[_ngcontent-ng-c1794211671] {
+  background: white;
+  padding: 1rem;
+  border-radius: 6px;
+  border: 1px solid #e0e6f5;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.03);
+  font-size: 0.95rem;
+  line-height: 1.5;
+  color: #34495e;
+}
+.feed-info[_ngcontent-ng-c1794211671]   .feed-analysis[_ngcontent-ng-c1794211671]   .analysis-content[_ngcontent-ng-c1794211671]   pre[_ngcontent-ng-c1794211671] {
+  background: #f8f9fc;
+  padding: 0.75rem;
+  border-radius: 4px;
+  overflow-x: auto;
+  font-size: 0.85rem;
+}
+.feed-info[_ngcontent-ng-c1794211671]   .feed-analysis[_ngcontent-ng-c1794211671]   .analysis-content[_ngcontent-ng-c1794211671]   .feed-analysis-content[_ngcontent-ng-c1794211671]   .analysis-summary[_ngcontent-ng-c1794211671] {
+  font-size: 1rem;
+  margin-bottom: 1rem;
+  color: #2c3e50;
+  line-height: 1.5;
+}
+.feed-info[_ngcontent-ng-c1794211671]   .feed-analysis[_ngcontent-ng-c1794211671]   .analysis-content[_ngcontent-ng-c1794211671]   .feed-analysis-content[_ngcontent-ng-c1794211671]   .analysis-details[_ngcontent-ng-c1794211671]   h5[_ngcontent-ng-c1794211671] {
+  margin-top: 1rem;
+  margin-bottom: 0.5rem;
+  color: #3498db;
+  font-size: 1rem;
+}
+.feed-info[_ngcontent-ng-c1794211671]   .feed-analysis[_ngcontent-ng-c1794211671]   .analysis-content[_ngcontent-ng-c1794211671]   .feed-analysis-content[_ngcontent-ng-c1794211671]   .analysis-details[_ngcontent-ng-c1794211671]   ul[_ngcontent-ng-c1794211671] {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.feed-info[_ngcontent-ng-c1794211671]   .feed-analysis[_ngcontent-ng-c1794211671]   .analysis-content[_ngcontent-ng-c1794211671]   .feed-analysis-content[_ngcontent-ng-c1794211671]   .analysis-details[_ngcontent-ng-c1794211671]   ul[_ngcontent-ng-c1794211671]   li[_ngcontent-ng-c1794211671] {
+  padding: 0.4rem 0;
+  margin: 0;
+  border: none;
+  border-bottom: 1px dotted #eee;
+  font-size: 0.9rem;
+}
+.feed-info[_ngcontent-ng-c1794211671]   .feed-analysis[_ngcontent-ng-c1794211671]   .analysis-content[_ngcontent-ng-c1794211671]   .feed-analysis-content[_ngcontent-ng-c1794211671]   .analysis-details[_ngcontent-ng-c1794211671]   ul[_ngcontent-ng-c1794211671]   li[_ngcontent-ng-c1794211671]:last-child {
+  border-bottom: none;
+}
+.feed-info[_ngcontent-ng-c1794211671]   .feed-analysis[_ngcontent-ng-c1794211671]   .analysis-content[_ngcontent-ng-c1794211671]   .feed-analysis-content[_ngcontent-ng-c1794211671]   .analysis-details[_ngcontent-ng-c1794211671]   ul[_ngcontent-ng-c1794211671]   li[_ngcontent-ng-c1794211671]   strong[_ngcontent-ng-c1794211671] {
+  color: #7f8c8d;
+  font-weight: 600;
+  margin-right: 0.3rem;
+}
+.feed-title[_ngcontent-ng-c1794211671] {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.feed-indicator[_ngcontent-ng-c1794211671] {
+  font-size: 0.7rem;
+  opacity: 0.6;
+  margin-left: 0.5rem;
+}
+svg[_ngcontent-ng-c1794211671] {
+  vertical-align: middle;
+  margin-right: 0.3rem;
+}
+.location-info[_ngcontent-ng-c1794211671] {
+  background-color: #e8f4f8;
+  padding: 0.8rem;
+  border-radius: 6px;
+  margin: 0.8rem 0;
+  border-left: 3px solid #3498db;
+}
+.location-info[_ngcontent-ng-c1794211671]   h5[_ngcontent-ng-c1794211671] {
+  margin-top: 0;
+  margin-bottom: 0.5rem;
+  color: #2980b9;
+  font-size: 1rem;
+}
+.location-info[_ngcontent-ng-c1794211671]   p[_ngcontent-ng-c1794211671] {
+  margin: 0.3rem 0;
+  font-size: 0.9rem;
+}
+.location-info[_ngcontent-ng-c1794211671]   p[_ngcontent-ng-c1794211671]:last-child {
+  margin-bottom: 0;
+}
+.location-info[_ngcontent-ng-c1794211671]   p[_ngcontent-ng-c1794211671]   strong[_ngcontent-ng-c1794211671] {
+  font-weight: 600;
+  color: #2c3e50;
+}
+/*# sourceMappingURL=/rss-feed.component.css.map */</style></head>
+<body class="mat-typography"><!--nghm--><script type="text/javascript" id="ng-event-dispatch-contract">(()=>{function p(t,n,r,o,e,i,f,m){return{eventType:t,event:n,targetElement:r,eic:o,timeStamp:e,eia:i,eirp:f,eiack:m}}function u(t){let n=[],r=e=>{n.push(e)};return{c:t,q:n,et:[],etc:[],d:r,h:e=>{r(p(e.type,e,e.target,t,Date.now()))}}}function s(t,n,r){for(let o=0;o<n.length;o++){let e=n[o];(r?t.etc:t.et).push(e),t.c.addEventListener(e,t.h,r)}}function c(t,n,r,o,e=window){let i=u(t);e._ejsas||(e._ejsas={}),e._ejsas[n]=i,s(i,r),s(i,o,!0)}window.__jsaction_bootstrap=c;})();
+</script><script>window.__jsaction_bootstrap(document.body,"ng",["submit","change","click","input","compositionstart","compositionend"],["blur"]);</script>
+  <app-root ng-version="19.2.13" ng-server-context="ssg"><main class="main"><app-rss-feed _nghost-ng-c1794211671=""><div _ngcontent-ng-c1794211671="" class="rss-feed-container"><div _ngcontent-ng-c1794211671="" class="feed-selection"><h3 _ngcontent-ng-c1794211671="">Police RSS Feed Selector</h3><!--bindings={
+  "ng-reflect-ng-if": "false"
+}--><form _ngcontent-ng-c1794211671="" novalidate="" class="input-row ng-untouched ng-pristine ng-valid"><div _ngcontent-ng-c1794211671="" class="select-container"><select _ngcontent-ng-c1794211671="" name="feedSelect" ng-reflect-name="feedSelect" ng-reflect-is-disabled="false" class="ng-untouched ng-pristine ng-valid" ng-reflect-model="[object Object]"><option _ngcontent-ng-c1794211671="" value="0: null">Select a German police feed...</option><option _ngcontent-ng-c1794211671="" value="1: Object" ng-reflect-ng-value="[object Object]"> Polizei Sachsen - Official police feed from Saxony </option><option _ngcontent-ng-c1794211671="" value="2: Object" ng-reflect-ng-value="[object Object]"> Polizei Brandenburg - Police department of Brandenburg state </option><option _ngcontent-ng-c1794211671="" value="3: Object" ng-reflect-ng-value="[object Object]"> Polizei Berlin - Police department of Berlin </option><option _ngcontent-ng-c1794211671="" value="4: Object" ng-reflect-ng-value="[object Object]"> Polizei Schleswig-Holstein - RSS feed for wanted persons from the Schleswig-Holstein police </option><!--bindings={
+  "ng-reflect-ng-for-of": "[object Object],[object Object"
+}--></select></div><button _ngcontent-ng-c1794211671="" type="button" class="refresh-feed" disabled=""> Refresh </button><input _ngcontent-ng-c1794211671="" type="text" name="customFeedUrl" placeholder="Or paste a custom RSS feed URL" ng-reflect-name="customFeedUrl" ng-reflect-model="" class="ng-untouched ng-pristine ng-valid" value=""><button _ngcontent-ng-c1794211671="" type="submit">Load Selected Feed</button></form></div><!--bindings={
+  "ng-reflect-ng-if": "false"
+}--><!--bindings={
+  "ng-reflect-ng-if": null
+}--><!--bindings={
+  "ng-reflect-ng-if": null
+}--><!--bindings={
+  "ng-reflect-ng-if": "0"
+}--><!--bindings={
+  "ng-reflect-ng-if": "false"
+}--><div _ngcontent-ng-c1794211671="" class="empty"><svg _ngcontent-ng-c1794211671="" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path _ngcontent-ng-c1794211671="" d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline _ngcontent-ng-c1794211671="" points="14 2 14 8 20 8"></polyline><line _ngcontent-ng-c1794211671="" x1="16" y1="13" x2="8" y2="13"></line><line _ngcontent-ng-c1794211671="" x1="16" y1="17" x2="8" y2="17"></line><polyline _ngcontent-ng-c1794211671="" points="10 9 9 9 8 9"></polyline></svg><p _ngcontent-ng-c1794211671="">No feed items loaded. Select a feed and click "Load Selected Feed" to get started.</p></div><!--bindings={
+  "ng-reflect-ng-if": "true"
+}--></div></app-rss-feed></main><router-outlet></router-outlet><!--container--></app-root>
+<script src="polyfills.js" type="module"></script><script src="main.js" type="module"></script>
+
+<script id="ng-state" type="application/json">{"1051557271":{"b":[{"name":"Polizei Brandenburg","url":"https://polizei.brandenburg.de/pressemeldungen/rss/region/57581","description":"Police department of Brandenburg state"},{"name":"Polizei Berlin","url":"https://www.berlin.de/polizei/polizeimeldungen/index.php/rss","description":"Police department of Berlin"},{"name":"Polizei Schleswig-Holstein","url":"https://www.schleswig-holstein.de/DE/landesregierung/ministerien-behoerden/POLIZEI/RSS_Funktionalitaet/RSS_Taeterfahndung/RSSNewsfeed_Taeterfahndung.xml?nn=7b019c0c-7697-4f3f-a7d2-751e887914f6","description":"RSS feed for wanted persons from the Schleswig-Holstein police"}],"h":{},"s":200,"st":"OK","u":"/api/german-police-feeds","rt":"json"},"__nghData__":[{"t":{"4":"t0","10":"t1","16":"t2","17":"t3","18":"t4","19":"t5","20":"t6","21":"t7"},"c":{"4":[],"10":[{"i":"t1","r":1,"x":4}],"16":[],"17":[],"18":[],"19":[],"20":[],"21":[{"i":"t7","r":1}]}},{"c":{"2":[]}}]}</script></body></html>
