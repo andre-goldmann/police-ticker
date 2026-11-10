@@ -1,7 +1,8 @@
-import { Component, OnInit } from '@angular/core';
-import { CommonModule } from '@angular/common';
+import { Component, Inject, OnDestroy, OnInit } from '@angular/core';
+import { CommonModule, DOCUMENT } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { HttpClient, HttpClientModule } from '@angular/common/http';
+import { Subscription } from 'rxjs';
 
 import { feedItemMatchesQuery } from './feed-item-search';
 import { FeedSortDirection, sortFeedIndices } from './feed-item-sort';
@@ -14,6 +15,9 @@ export interface PoliceFeed {
 
 /** Maximum number of items rendered from a pasted custom feed. */
 const MAX_CUSTOM_FEED_ITEMS = 100;
+
+/** Interval in milliseconds between automatic re-fetches of the loaded feed. */
+const AUTO_REFRESH_INTERVAL_MS = 60_000;
 
 function isValidHttpUrl(value: string): boolean {
   try {
@@ -31,7 +35,7 @@ function isValidHttpUrl(value: string): boolean {
   templateUrl: './rss-feed.component.html',
   styleUrl: './rss-feed.component.scss',
 })
-export class RssFeedComponent implements OnInit {
+export class RssFeedComponent implements OnInit, OnDestroy {
   feedItems: any[] = [];
   loading = false;
   error: string | null = null;
@@ -55,13 +59,17 @@ export class RssFeedComponent implements OnInit {
    * load succeeds, never through unsubmitted input edits.
    */
   loadedFeed: { url: string; kind: 'preset' | 'custom' } | null = null;
+  /** Pending automatic re-fetch timer, if one is scheduled. */
+  private autoRefreshTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Automatic re-fetch currently in flight, if any. */
+  private autoRefreshSubscription: Subscription | null = null;
   defaultFeed: PoliceFeed = {
     name: 'Polizei Sachsen',
     url: 'https://www.polizei.sachsen.de/de/presse_rss_pdl.xml',
     description: 'Official police feed from Saxony',
   };
 
-  constructor(private http: HttpClient) {}
+  constructor(private http: HttpClient, @Inject(DOCUMENT) private document: Document) {}
 
   /**
    * Submit is possible while a preset is selected (as before) or while a
@@ -156,6 +164,14 @@ export class RssFeedComponent implements OnInit {
   ngOnInit() {
     // Load the list of police feeds when component initializes
     this.loadPoliceFeeds();
+    // Pause the automatic re-fetch while the tab is hidden and catch up when
+    // it becomes visible again.
+    this.document.addEventListener('visibilitychange', this.onVisibilityChange);
+  }
+
+  ngOnDestroy() {
+    this.document.removeEventListener('visibilitychange', this.onVisibilityChange);
+    this.stopAutoRefresh();
   }
 
   loadPoliceFeeds() {
@@ -210,20 +226,87 @@ export class RssFeedComponent implements OnInit {
     this.loadFeed(this.loadedFeed.url, this.loadedFeed.kind === 'custom' ? this.loadedFeed.url : undefined);
   }
 
-  private loadFeed(feedUrl: string, customUrl?: string) {
+  /**
+   * While the tab is hidden the pending re-fetch tick is dropped; when the tab
+   * becomes visible again the currently loaded feed is re-fetched immediately
+   * and the cadence continues from that catch-up.
+   */
+  private readonly onVisibilityChange = () => {
+    if (this.document.visibilityState === 'hidden') {
+      this.clearAutoRefreshTimer();
+      return;
+    }
+    this.onAutoRefreshTick();
+  };
+
+  /**
+   * Fires when the automatic re-fetch interval elapses: re-fetches the
+   * currently loaded feed only — never the dropdown selection or the custom
+   * URL field text — and skips the tick while nothing is loaded, the tab is
+   * hidden, or a re-fetch is still in flight.
+   */
+  private onAutoRefreshTick() {
+    this.autoRefreshTimer = null;
+    if (this.document.visibilityState === 'hidden') {
+      return;
+    }
+    const loaded = this.loadedFeed;
+    if (!loaded || this.autoRefreshSubscription !== null) {
+      return;
+    }
+    // Schedule the next tick now: if this re-fetch is still in flight when it
+    // fires, the tick is skipped and this re-fetch schedules the next attempt
+    // 60 seconds after it finishes.
+    this.scheduleAutoRefreshTimer();
+    this.loadFeed(loaded.url, loaded.kind === 'custom' ? loaded.url : undefined, {
+      silent: true,
+    });
+  }
+
+  private scheduleAutoRefreshTimer() {
+    this.clearAutoRefreshTimer();
+    this.autoRefreshTimer = setTimeout(() => this.onAutoRefreshTick(), AUTO_REFRESH_INTERVAL_MS);
+  }
+
+  private clearAutoRefreshTimer() {
+    if (this.autoRefreshTimer !== null) {
+      clearTimeout(this.autoRefreshTimer);
+      this.autoRefreshTimer = null;
+    }
+  }
+
+  /**
+   * Stop the automatic re-fetch: drop the pending tick and cancel a re-fetch
+   * that is still in flight so its response cannot arrive out of order.
+   */
+  private stopAutoRefresh() {
+    this.clearAutoRefreshTimer();
+    if (this.autoRefreshSubscription !== null) {
+      this.autoRefreshSubscription.unsubscribe();
+      this.autoRefreshSubscription = null;
+    }
+  }
+
+  private loadFeed(feedUrl: string, customUrl?: string, options?: { silent?: boolean }) {
+    const silent = options?.silent === true;
     const kind: 'preset' | 'custom' = customUrl ? 'custom' : 'preset';
-    this.loading = true;
-    this.error = null;
-    this.feedItems = [];
-    this.feedAnalysis = null; // Reset any previous feed analysis
-    this.selectedIndex = null; // Collapse any open item detail
-    this.openrouterResponse = null;
-    this.loadingAnalysis = false;
+    if (!silent) {
+      // A manual load or refresh cancels the scheduled automatic re-fetch and
+      // any re-fetch still in flight; its own success restarts the interval.
+      this.stopAutoRefresh();
+      this.loading = true;
+      this.error = null;
+      this.feedItems = [];
+      this.feedAnalysis = null; // Reset any previous feed analysis
+      this.selectedIndex = null; // Collapse any open item detail
+      this.openrouterResponse = null;
+      this.loadingAnalysis = false;
+    }
 
     // All feeds are now treated as external URLs
     const endpoint = `/api/custom-rss?url=${encodeURIComponent(feedUrl)}`;
 
-    this.http.get<any[]>(endpoint).subscribe({
+    const subscription = this.http.get<any[]>(endpoint).subscribe({
       next: (items) => {
         if (customUrl) {
           this.feedItems = items.slice(0, MAX_CUSTOM_FEED_ITEMS);
@@ -235,18 +318,37 @@ export class RssFeedComponent implements OnInit {
         } else {
           this.feedItems = items;
         }
-        this.loadedFeed = { url: feedUrl, kind };
-        // A fresh feed load always shows its full list — reset the search box
-        // and the sort direction to their defaults.
-        this.searchQuery = '';
-        this.sortDirection = 'newest';
-        this.loading = false;
+        if (silent) {
+          // An automatic re-fetch swaps the items in place; the manual loading
+          // state, the search query, the sort direction, and any open detail
+          // stay as they are.
+          this.autoRefreshSubscription = null;
+        } else {
+          this.loadedFeed = { url: feedUrl, kind };
+          // A fresh feed load always shows its full list — reset the search box
+          // and the sort direction to their defaults.
+          this.searchQuery = '';
+          this.sortDirection = 'newest';
+          this.loading = false;
+        }
+        // Any completed load — manual or automatic — restarts the interval.
+        this.scheduleAutoRefreshTimer();
       },
       error: (err) => {
         this.error = err?.error?.error || 'Failed to load RSS feed.';
+        if (silent) {
+          // A failed automatic re-fetch shows the banner once and stops the
+          // timer; only a manual refresh or a new load restarts it.
+          this.autoRefreshSubscription = null;
+          this.clearAutoRefreshTimer();
+          return;
+        }
         this.loading = false;
       },
     });
+    if (silent) {
+      this.autoRefreshSubscription = subscription;
+    }
   }
   /**
    * Gets feed analysis for the currently selected feed
