@@ -259,6 +259,46 @@ li {
     font-size: 0.9rem;
   }
   
+  .feed-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    margin-top: 0.6rem;
+
+    .feed-search {
+      flex: 1;
+      width: auto;
+      margin-top: 0;
+    }
+  }
+
+  .sort-toggle {
+    display: inline-flex;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    overflow: hidden;
+    flex-shrink: 0;
+
+    .sort-option {
+      border: none;
+      background: white;
+      padding: 0.5rem 0.75rem;
+      font-size: 0.9rem;
+      color: #7f8c8d;
+      cursor: pointer;
+      border-right: 1px solid #ccc;
+
+      &:last-child {
+        border-right: none;
+      }
+
+      &.active {
+        background: #3498db;
+        color: white;
+      }
+    }
+  }
+
   .feed-search {
     width: 100%;
     margin-top: 0.6rem;

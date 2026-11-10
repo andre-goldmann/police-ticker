@@ -48,18 +48,40 @@
     <div class="feed-meta">
       <span>{{ itemCountLabel }}</span>
     </div>
-    <input
-      type="text"
-      name="feedSearch"
-      class="feed-search"
-      [(ngModel)]="searchQuery"
-      placeholder="Search title and description..."
-      aria-label="Search feed items"
-    />
+    <div class="feed-toolbar">
+      <div class="sort-toggle" role="group" aria-label="Sort feed items by publication date">
+        <button
+          type="button"
+          class="sort-option sort-newest"
+          [class.active]="sortDirection === 'newest'"
+          [attr.aria-pressed]="sortDirection === 'newest'"
+          (click)="setSortDirection('newest')"
+        >
+          Newest
+        </button>
+        <button
+          type="button"
+          class="sort-option sort-oldest"
+          [class.active]="sortDirection === 'oldest'"
+          [attr.aria-pressed]="sortDirection === 'oldest'"
+          (click)="setSortDirection('oldest')"
+        >
+          Oldest
+        </button>
+      </div>
+      <input
+        type="text"
+        name="feedSearch"
+        class="feed-search"
+        [(ngModel)]="searchQuery"
+        placeholder="Search title and description..."
+        aria-label="Search feed items"
+      />
+    </div>
   </div>
 
   <ul *ngIf="feedItems.length" class="feed-items">
-    <li *ngFor="let index of matchingFeedIndices" [class.selected]="selectedIndex === index">
+    <li *ngFor="let index of displayedFeedIndices" [class.selected]="selectedIndex === index">
       <a href="#" (click)="showDetails(index, $event)" class="feed-title">
         {{ feedItems[index].title }}
         <small class="feed-indicator" *ngIf="selectedIndex === index">▼</small>
