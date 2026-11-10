@@ -1,227 +1,179 @@
 {
   "round": 1,
-  "branch": "factory/9aab4be9",
-  "archivedAt": "2026-11-09T22:06:56.138Z",
-  "raw": "```json\n{\n  \"cards\": [\n    {\n      \"id\": \"match-semantics\",\n      \"title\": \"How does the keyword match work?\",\n      \"body\": \"The feature says the search box filters by title and description in real time. What does one query mean when it runs against an item? Facts: items are plain strings on the client (`feedItems`), a preset feed is uncapped and a custom feed is capped at 100 items, so matching happens over at most a few hundred items per feed.\",\n      \"options\": [\n        { \"key\": \"A\", \"text\": \"Case-insensitive substring; a query with several words requires ALL of them to appear (AND)\" },\n        { \"key\": \"B\", \"text\": \"Case-insensitive substring; a query with several words matches when ANY word appears (OR)\" },\n        { \"key\": \"C\", \"text\": \"The whole query is one phrase — exact case-insensitive substring, word boundaries ignored\" },\n        { \"key\": \"D\", \"text\": \"Case-sensitive exact substring\" }\n      ],\n      \"rec\": { \"option\": \"A\", \"why\": \"Case-insensitive AND matches what users expect from 'keyword search' (narrowing as they type more words), is trivially testable, and needs no tokenization beyond splitting on whitespace.\" }\n    },\n    {\n      \"id\": \"html-matching\",\n      \"title\": \"Match against raw description markup or visible text?\",\n      \"body\": \"Fact: `item.description` is HTML — the template renders it with `[innerHTML]`, so descriptions carry tags and entities (e.g. `<p>`, `&auml;`). Matching the raw string can hit matches inside markup (`query \\\"div\\\"` matching every item with a `<div>`) and miss text hidden behind entities.\",\n      \"options\": [\n        { \"key\": \"A\", \"text\": \"Strip tags and decode entities first; match only the visible text of the description\" },\n        { \"key\": \"B\", \"text\": \"Match the raw description string including markup\" }\n      ],\n      \"rec\": { \"option\": \"A\", \"why\": \"Users think in visible words, not markup; raw matching produces false positives on tag names and false negatives through entities. Stripping is a pure function, so an outcome-based test can fail on it.\" }\n    },\n    {\n      \"id\": \"diacritics\",\n      \"title\": \"Are umlauts folded when matching?\",\n      \"body\": \"The feeds are German police reports, so titles and descriptions contain ä/ö/ü/ß. Should a query typed without diacritics still match (e.g. 'schaden' matching 'Schäden'), or must the query use the exact letters as written?\",\n      \"options\": [\n        { \"key\": \"A\", \"text\": \"No folding — matching is plain case-insensitive; the query must contain the letters as written\" },\n        { \"key\": \"B\", \"text\": \"Fold diacritics on both sides (ä=a, ö=o, ü=u, ß=ss) so 'schaden' matches 'Schäden'\" }\n      ],\n      \"rec\": { \"option\": \"A\", \"why\": \"Keep the smallest correct change: users searching German reports type the umlauts anyway, and folding rules (ä→a vs ä→ae) are a rabbit hole that belongs to a follow-up if wanted.\" }\n    },\n    {\n      \"id\": \"empty-state\",\n      \"title\": \"What shows when the query matches zero items?\",\n      \"body\": \"Today the list area shows either items or the generic 'No feed items loaded' empty state, which is driven by `feedItems.length`. With an active query that filters everything out, the visitor needs to tell 'feed empty' apart from 'nothing matches your filter'.\",\n      \"options\": [\n        { \"key\": \"A\", \"text\": \"A distinct message like 'No items match your search.' shown only while a query is active\" },\n        { \"key\": \"B\", \"text\": \"Reuse the existing generic empty-state block\" },\n        { \"key\": \"C\", \"text\": \"Show nothing — just an empty list\" }\n      ],\n      \"rec\": { \"option\": \"A\", \"why\": \"Conflating 'no matches' with 'no feed loaded' is actively misleading; a distinct message is one observable outcome a test can fail.\" }\n    },\n    {\n      \"id\": \"count-display\",\n      \"title\": \"What does the item count show while filtering?\",\n      \"body\": \"Fact: the feed-info header prints `{{ feedItems.length }} item(s)`. Under an active filter the displayed list is shorter than the loaded list, so that number would silently lie about what is on screen.\",\n      \"options\": [\n        { \"key\": \"A\", \"text\": \"While a query is active, show 'X of Y item(s)'; with an empty query keep 'Y item(s)' unchanged\" },\n        { \"key\": \"B\", \"text\": \"Always show only the currently displayed count\" },\n        { \"key\": \"C\", \"text\": \"Leave the header showing the total regardless of filtering\" }\n      ],\n      \"rec\": { \"option\": \"A\", \"why\": \"'X of Y' states both facts with no ambiguity and leaves the no-filter rendering byte-identical to today; B hides how much the filter is hiding, C shows a count that contradicts the visible list.\" }\n    },\n    {\n      \"id\": \"open-detail\",\n      \"title\": \"What happens to an open item detail while filtering?\",\n      \"body\": \"Fact: `selectedIndex` is an index into the full `feedItems` array and drives the expanded AI-analysis detail. Filtering hides list entries but keeps the underlying array and its indices intact, so an open detail can either persist or be closed when the query changes.\",\n      \"options\": [\n        { \"key\": \"A\", \"text\": \"Collapse the open detail whenever the query changes, and again on every new feed load\" },\n        { \"key\": \"B\", \"text\": \"Keep the detail open as long as its item still matches the query; collapse it only when the query filters that item out\" }\n      ],\n      \"rec\": { \"option\": \"B\", \"why\": \"The index stays valid because filtering is a subset of the same array, so persistence costs almost nothing; A closes a report the visitor is reading (possibly mid-AI-analysis) just for typing one more character, and a filtered-out detail lingering open is confusing.\" }\n    },\n    {\n      \"id\": \"reset-on-load\",\n      \"title\": \"Is the query cleared when a feed loads?\",\n      \"body\": \"Two load paths exist: 'Load Selected Feed' (new feed or pasted custom URL) and Refresh (reloads the currently loaded feed, per the glossary). Should the search box carry its query across a load or start clean?\",\n      \"options\": [\n        { \"key\": \"A\", \"text\": \"Clear the query and the filter on every load — Load Selected Feed and Refresh alike\" },\n        { \"key\": \"B\", \"text\": \"Clear only on 'Load Selected Feed'; Refresh keeps the query and re-applies it to the reloaded items\" },\n        { \"key\": \"C\", \"text\": \"Never clear — the query always survives loads\" }\n      ],\n      \"rec\": { \"option\": \"A\", \"why\": \"A stale filter over freshly loaded items is the classic 'why is my list empty' bug; starting clean after any load is one predictable rule that matches the glossary's idea that Refresh re-displays the feed as it is.\" }\n    },\n    {\n      \"id\": \"placement\",\n      \"title\": \"Where does the search box sit and when is it visible?\",\n      \"body\": \"The page has a feed-selection row (dropdown, Refresh, custom URL, Load button) and a feed-info header that appears once items are loaded. Filtering only means anything while a feed is loaded, but the box could still live in either place.\",\n      \"options\": [\n        { \"key\": \"A\", \"text\": \"In the feed-info header area, shown only while a feed with items is loaded\" },\n        { \"key\": \"B\", \"text\": \"In the feed-selection input row, always visible but disabled until items are loaded\" }\n      ],\n      \"rec\": { \"option\": \"A\", \"why\": \"It keeps the feature scoped to the 'currently loaded feed' the sentence names, avoids a permanently disabled control in the selection row, and leaves the existing form and its tests untouched.\" }\n    },\n    {\n      \"id\": \"clear-control\",\n      \"title\": \"Does the search box need a clear control?\",\n      \"body\": \"Beyond deleting the text by keyboard, a small clear affordance resets the filter in one action.\",\n      \"options\": [\n        { \"key\": \"A\", \"text\": \"Plain input only — visitors clear by deleting the text\" },\n        { \"key\": \"B\", \"text\": \"A clear (×) button inside the box, visible only while the query is non-empty\" }\n      ],\n      \"rec\": { \"option\": \"A\", \"why\": \"Minimal scope for one sentence of feature; a clear button is nice-to-have and can arrive as a follow-up without changing any settled behavior.\" }\n    },\n    {\n      \"id\": \"confirmation\",\n      \"title\": \"Confirm shared understanding\",\n      \"body\": \"Settled so far: a client-side, real-time keyword search box over the currently loaded feed's items matching title and description. If you accept the recommendations above (case-insensitive AND substrings over visible text with no diacritic folding; distinct no-match message; 'X of Y item(s)' while filtering; detail open while its item still matches; query cleared on every load; box in the feed-info header with no clear button), the design tree is complete and the next step is /to-spec. Confirm, or answer the cards differently and a new round follows.\",\n      \"options\": [\n        { \"key\": \"A\", \"text\": \"Confirmed — shared understanding reached, proceed to the Spec\" },\n        { \"key\": \"B\", \"text\": \"Not confirmed — my answers above change the picture; ask another round\" }\n      ],\n      \"rec\": { \"option\": \"A\", \"why\": \"With the nine cards above answered, no branch of the design tree is left silently assumed; anything further (tests, wording) is Spec detail, not grill material.\" }\n    }\n  ]\n}\n```",
+  "branch": "factory/7b2adfc9",
+  "archivedAt": "2026-11-10T12:12:20.116Z",
+  "raw": "```json\n{\n  \"cards\": [\n    {\n      \"id\": \"sort-default\",\n      \"title\": \"Initial sort state after a feed loads\",\n      \"body\": \"Today a loaded feed displays items in the order the server returned them. Once the toggle exists, which state is it in — and therefore which order does the list show — immediately after a successful load?\",\n      \"options\": [\n        { \"key\": \"a\", \"text\": \"Newest first — the toggle starts on 'Newest' and the loaded list is sorted by publication date right away\" },\n        { \"key\": \"b\", \"text\": \"Newest selected but list in feed order — the toggle shows 'Newest' while the display stays in server order until the user toggles\" },\n        { \"key\": \"c\", \"text\": \"Feed order until the first toggle — the list shows server order until the user picks a direction\" }\n      ],\n      \"rec\": {\n        \"option\": \"a\",\n        \"why\": \"The toggle is the only control over order, so its displayed state must match what the list shows; a control claiming 'Newest' over feed order (b) would lie, and (c) leaves the toggle's meaning undefined until clicked. Police feeds are usually newest-first anyway, so (a) is typically a no-op on load and only changes the outcome for feeds that arrive out of order — exactly the case this feature targets.\"\n      }\n    },\n    {\n      \"id\": \"sort-reset-on-load\",\n      \"title\": \"Sort state across Load and Refresh\",\n      \"body\": \"loadFeed() already resets the search box on every successful load, and Refresh reloads the currently loaded feed. Does the toggle keep the user's chosen direction across a Refresh or a newly loaded feed, or reset to its default state like the search box?\",\n      \"options\": [\n        { \"key\": \"a\", \"text\": \"Reset to the default direction on every successful load, like the search box\" },\n        { \"key\": \"b\", \"text\": \"Keep the user's chosen direction across loads within the session\" }\n      ],\n      \"rec\": {\n        \"option\": \"a\",\n        \"why\": \"The existing rule is that a fresh load shows the feed's full list in a fresh state; carrying a sort direction across loads would silently reorder a feed the user just swapped, and 'Refresh' would then show a different order than the same feed's first load.\"\n      }\n    },\n    {\n      \"id\": \"missing-dates\",\n      \"title\": \"Items without a parseable publication date\",\n      \"body\": \"The sort key is each item's pubDate. Some feeds omit pubDate or ship a string that cannot be parsed as a date. Where do such items land while 'Newest' or 'Oldest' is active?\",\n      \"options\": [\n        { \"key\": \"a\", \"text\": \"Always last in both directions, keeping their relative feed order among themselves\" },\n        { \"key\": \"b\", \"text\": \"Treated as the oldest possible time, so they sink to the bottom under 'Newest' and rise to the top under 'Oldest'\" },\n        { \"key\": \"c\", \"text\": \"Left out of the sorted list entirely\" }\n      ],\n      \"rec\": {\n        \"option\": \"a\",\n        \"why\": \"An item must not vanish because its date is missing — (c) would hide content the item-count label still counts, breaking the count. (b) puts undated items above dated ones under 'Oldest', which reads as a false claim of recency; pinning them last in both directions keeps them reachable and never above a dated item.\"\n      }\n    },\n    {\n      \"id\": \"tie-order\",\n      \"title\": \"Items with identical timestamps\",\n      \"body\": \"When two loaded items carry the same publication date, which order do they display in under 'Newest' and under 'Oldest'?\",\n      \"options\": [\n        { \"key\": \"a\", \"text\": \"Their original feed order in both directions (stable sort)\" },\n        { \"key\": \"b\", \"text\": \"Feed order under 'Newest', reversed feed order under 'Oldest'\" }\n      ],\n      \"rec\": {\n        \"option\": \"a\",\n        \"why\": \"A stable sort makes the display predictable and keeps the two directions exact mirrors of each other; ties are common when a feed stamps the same day-level date on several reports, and flipping the toggle then reshuffling those tied items for no visible reason would look like a bug.\"\n      }\n    },\n    {\n      \"id\": \"detail-on-resort\",\n      \"title\": \"Open item detail when the direction flips\",\n      \"body\": \"The list renders indices into feedItems and selectedIndex points into that array. When the user flips the toggle while an item's detail (including a possibly still-loading AI summary) is open, what happens to that open detail?\",\n      \"options\": [\n        { \"key\": \"a\", \"text\": \"It stays open and moves with its item to the item's new position\" },\n        { \"key\": \"b\", \"text\": \"It closes when the direction changes\" }\n      ],\n      \"rec\": {\n        \"option\": \"a\",\n        \"why\": \"The feature states the open detail keeps working as today: like the search filter today, reordering the displayed indices does not change which item is selected, so closing it would be a regression and would discard an in-flight or completed analysis the user explicitly opened.\"\n      }\n    },\n    {\n      \"id\": \"toggle-ui\",\n      \"title\": \"Shape of the toggle control\",\n      \"body\": \"What control sits next to the feed search box to choose between Newest and Oldest?\",\n      \"options\": [\n        { \"key\": \"a\", \"text\": \"One two-state button showing the current direction ('Newest' or 'Oldest') that flips on click\" },\n        { \"key\": \"b\", \"text\": \"A segmented pair of buttons, one per direction, with the active one visually marked (aria-pressed)\" },\n        { \"key\": \"c\", \"text\": \"A dropdown select offering the two directions\" }\n      ],\n      \"rec\": {\n        \"option\": \"b\",\n        \"why\": \"Both options are visible at once, so the existence of the other order is discoverable without clicking, and the active state is declared rather than inferred; a flipping button (a) changes its own label on every click, and a dropdown (c) hides a two-value choice behind an extra interaction.\"\n      }\n    },\n    {\n      \"id\": \"toggle-visibility\",\n      \"title\": \"When the toggle is visible\",\n      \"body\": \"The search box renders only while a feed is loaded and has items (loadedFeed && feedItems.length). When should the sort toggle render?\",\n      \"options\": [\n        { \"key\": \"a\", \"text\": \"Exactly with the search box — same condition, placed next to it\" },\n        { \"key\": \"b\", \"text\": \"Always visible, disabled while no feed with items is loaded\" }\n      ],\n      \"rec\": {\n        \"option\": \"a\",\n        \"why\": \"'Next to the feed search box' pins its place, and with zero loaded items there is nothing to reorder; an always-present but permanently dead control in the empty state adds noise without function.\"\n      }\n    },\n    {\n      \"id\": \"confirm-shared-understanding\",\n      \"title\": \"Confirmation of shared understanding\",\n      \"body\": \"The picture after this round: a two-option Newest/Oldest control next to the feed search box, visible whenever the search box is, reorders only the currently loaded feed's already-loaded items client-side by publication date — no refetch. The active search filter keeps filtering and the count label keeps counting; an open detail stays open and follows its item. Undated items sort last in both directions, ties keep feed order, the sort is stable, and every successful load (Load or Refresh) resets the toggle to its default direction. Confirm this as the shared understanding to take into the Spec?\",\n      \"options\": [\n        { \"key\": \"a\", \"text\": \"Yes — confirmed as stated\" },\n        { \"key\": \"b\", \"text\": \"No — I will correct it in a note\" }\n      ],\n      \"rec\": {\n        \"option\": \"a\",\n        \"why\": \"This restates exactly what the round's answers pin down; confirming it ends the Grill and lets the Spec be written from a settled picture.\"\n      }\n    }\n  ]\n}\n```",
   "cards": [
     {
-      "id": "match-semantics",
+      "id": "sort-default",
       "round": 1,
-      "title": "How does the keyword match work?",
-      "body": "The feature says the search box filters by title and description in real time. What does one query mean when it runs against an item? Facts: items are plain strings on the client (`feedItems`), a preset feed is uncapped and a custom feed is capped at 100 items, so matching happens over at most a few hundred items per feed.",
+      "title": "Initial sort state after a feed loads",
+      "body": "Today a loaded feed displays items in the order the server returned them. Once the toggle exists, which state is it in — and therefore which order does the list show — immediately after a successful load?",
       "options": [
         {
           "key": "A",
-          "text": "Case-insensitive substring; a query with several words requires ALL of them to appear (AND)"
+          "text": "Newest first — the toggle starts on 'Newest' and the loaded list is sorted by publication date right away"
         },
         {
           "key": "B",
-          "text": "Case-insensitive substring; a query with several words matches when ANY word appears (OR)"
+          "text": "Newest selected but list in feed order — the toggle shows 'Newest' while the display stays in server order until the user toggles"
         },
         {
           "key": "C",
-          "text": "The whole query is one phrase — exact case-insensitive substring, word boundaries ignored"
-        },
-        {
-          "key": "D",
-          "text": "Case-sensitive exact substring"
+          "text": "Feed order until the first toggle — the list shows server order until the user picks a direction"
         }
       ],
       "rec": {
         "option": "A",
-        "why": "Case-insensitive AND matches what users expect from 'keyword search' (narrowing as they type more words), is trivially testable, and needs no tokenization beyond splitting on whitespace."
+        "why": "The toggle is the only control over order, so its displayed state must match what the list shows; a control claiming 'Newest' over feed order (b) would lie, and (c) leaves the toggle's meaning undefined until clicked. Police feeds are usually newest-first anyway, so (a) is typically a no-op on load and only changes the outcome for feeds that arrive out of order — exactly the case this feature targets."
       }
     },
     {
-      "id": "html-matching",
+      "id": "sort-reset-on-load",
       "round": 1,
-      "title": "Match against raw description markup or visible text?",
-      "body": "Fact: `item.description` is HTML — the template renders it with `[innerHTML]`, so descriptions carry tags and entities (e.g. `<p>`, `&auml;`). Matching the raw string can hit matches inside markup (`query \"div\"` matching every item with a `<div>`) and miss text hidden behind entities.",
+      "title": "Sort state across Load and Refresh",
+      "body": "loadFeed() already resets the search box on every successful load, and Refresh reloads the currently loaded feed. Does the toggle keep the user's chosen direction across a Refresh or a newly loaded feed, or reset to its default state like the search box?",
       "options": [
         {
           "key": "A",
-          "text": "Strip tags and decode entities first; match only the visible text of the description"
+          "text": "Reset to the default direction on every successful load, like the search box"
         },
         {
           "key": "B",
-          "text": "Match the raw description string including markup"
+          "text": "Keep the user's chosen direction across loads within the session"
         }
       ],
       "rec": {
         "option": "A",
-        "why": "Users think in visible words, not markup; raw matching produces false positives on tag names and false negatives through entities. Stripping is a pure function, so an outcome-based test can fail on it."
+        "why": "The existing rule is that a fresh load shows the feed's full list in a fresh state; carrying a sort direction across loads would silently reorder a feed the user just swapped, and 'Refresh' would then show a different order than the same feed's first load."
       }
     },
     {
-      "id": "diacritics",
+      "id": "missing-dates",
       "round": 1,
-      "title": "Are umlauts folded when matching?",
-      "body": "The feeds are German police reports, so titles and descriptions contain ä/ö/ü/ß. Should a query typed without diacritics still match (e.g. 'schaden' matching 'Schäden'), or must the query use the exact letters as written?",
+      "title": "Items without a parseable publication date",
+      "body": "The sort key is each item's pubDate. Some feeds omit pubDate or ship a string that cannot be parsed as a date. Where do such items land while 'Newest' or 'Oldest' is active?",
       "options": [
         {
           "key": "A",
-          "text": "No folding — matching is plain case-insensitive; the query must contain the letters as written"
+          "text": "Always last in both directions, keeping their relative feed order among themselves"
         },
         {
           "key": "B",
-          "text": "Fold diacritics on both sides (ä=a, ö=o, ü=u, ß=ss) so 'schaden' matches 'Schäden'"
-        }
-      ],
-      "rec": {
-        "option": "A",
-        "why": "Keep the smallest correct change: users searching German reports type the umlauts anyway, and folding rules (ä→a vs ä→ae) are a rabbit hole that belongs to a follow-up if wanted."
-      }
-    },
-    {
-      "id": "empty-state",
-      "round": 1,
-      "title": "What shows when the query matches zero items?",
-      "body": "Today the list area shows either items or the generic 'No feed items loaded' empty state, which is driven by `feedItems.length`. With an active query that filters everything out, the visitor needs to tell 'feed empty' apart from 'nothing matches your filter'.",
-      "options": [
-        {
-          "key": "A",
-          "text": "A distinct message like 'No items match your search.' shown only while a query is active"
-        },
-        {
-          "key": "B",
-          "text": "Reuse the existing generic empty-state block"
+          "text": "Treated as the oldest possible time, so they sink to the bottom under 'Newest' and rise to the top under 'Oldest'"
         },
         {
           "key": "C",
-          "text": "Show nothing — just an empty list"
+          "text": "Left out of the sorted list entirely"
         }
       ],
       "rec": {
         "option": "A",
-        "why": "Conflating 'no matches' with 'no feed loaded' is actively misleading; a distinct message is one observable outcome a test can fail."
+        "why": "An item must not vanish because its date is missing — (c) would hide content the item-count label still counts, breaking the count. (b) puts undated items above dated ones under 'Oldest', which reads as a false claim of recency; pinning them last in both directions keeps them reachable and never above a dated item."
       }
     },
     {
-      "id": "count-display",
+      "id": "tie-order",
       "round": 1,
-      "title": "What does the item count show while filtering?",
-      "body": "Fact: the feed-info header prints `{{ feedItems.length }} item(s)`. Under an active filter the displayed list is shorter than the loaded list, so that number would silently lie about what is on screen.",
+      "title": "Items with identical timestamps",
+      "body": "When two loaded items carry the same publication date, which order do they display in under 'Newest' and under 'Oldest'?",
       "options": [
         {
           "key": "A",
-          "text": "While a query is active, show 'X of Y item(s)'; with an empty query keep 'Y item(s)' unchanged"
+          "text": "Their original feed order in both directions (stable sort)"
         },
         {
           "key": "B",
-          "text": "Always show only the currently displayed count"
+          "text": "Feed order under 'Newest', reversed feed order under 'Oldest'"
+        }
+      ],
+      "rec": {
+        "option": "A",
+        "why": "A stable sort makes the display predictable and keeps the two directions exact mirrors of each other; ties are common when a feed stamps the same day-level date on several reports, and flipping the toggle then reshuffling those tied items for no visible reason would look like a bug."
+      }
+    },
+    {
+      "id": "detail-on-resort",
+      "round": 1,
+      "title": "Open item detail when the direction flips",
+      "body": "The list renders indices into feedItems and selectedIndex points into that array. When the user flips the toggle while an item's detail (including a possibly still-loading AI summary) is open, what happens to that open detail?",
+      "options": [
+        {
+          "key": "A",
+          "text": "It stays open and moves with its item to the item's new position"
+        },
+        {
+          "key": "B",
+          "text": "It closes when the direction changes"
+        }
+      ],
+      "rec": {
+        "option": "A",
+        "why": "The feature states the open detail keeps working as today: like the search filter today, reordering the displayed indices does not change which item is selected, so closing it would be a regression and would discard an in-flight or completed analysis the user explicitly opened."
+      }
+    },
+    {
+      "id": "toggle-ui",
+      "round": 1,
+      "title": "Shape of the toggle control",
+      "body": "What control sits next to the feed search box to choose between Newest and Oldest?",
+      "options": [
+        {
+          "key": "A",
+          "text": "One two-state button showing the current direction ('Newest' or 'Oldest') that flips on click"
+        },
+        {
+          "key": "B",
+          "text": "A segmented pair of buttons, one per direction, with the active one visually marked (aria-pressed)"
         },
         {
           "key": "C",
-          "text": "Leave the header showing the total regardless of filtering"
-        }
-      ],
-      "rec": {
-        "option": "A",
-        "why": "'X of Y' states both facts with no ambiguity and leaves the no-filter rendering byte-identical to today; B hides how much the filter is hiding, C shows a count that contradicts the visible list."
-      }
-    },
-    {
-      "id": "open-detail",
-      "round": 1,
-      "title": "What happens to an open item detail while filtering?",
-      "body": "Fact: `selectedIndex` is an index into the full `feedItems` array and drives the expanded AI-analysis detail. Filtering hides list entries but keeps the underlying array and its indices intact, so an open detail can either persist or be closed when the query changes.",
-      "options": [
-        {
-          "key": "A",
-          "text": "Collapse the open detail whenever the query changes, and again on every new feed load"
-        },
-        {
-          "key": "B",
-          "text": "Keep the detail open as long as its item still matches the query; collapse it only when the query filters that item out"
+          "text": "A dropdown select offering the two directions"
         }
       ],
       "rec": {
         "option": "B",
-        "why": "The index stays valid because filtering is a subset of the same array, so persistence costs almost nothing; A closes a report the visitor is reading (possibly mid-AI-analysis) just for typing one more character, and a filtered-out detail lingering open is confusing."
+        "why": "Both options are visible at once, so the existence of the other order is discoverable without clicking, and the active state is declared rather than inferred; a flipping button (a) changes its own label on every click, and a dropdown (c) hides a two-value choice behind an extra interaction."
       }
     },
     {
-      "id": "reset-on-load",
+      "id": "toggle-visibility",
       "round": 1,
-      "title": "Is the query cleared when a feed loads?",
-      "body": "Two load paths exist: 'Load Selected Feed' (new feed or pasted custom URL) and Refresh (reloads the currently loaded feed, per the glossary). Should the search box carry its query across a load or start clean?",
+      "title": "When the toggle is visible",
+      "body": "The search box renders only while a feed is loaded and has items (loadedFeed && feedItems.length). When should the sort toggle render?",
       "options": [
         {
           "key": "A",
-          "text": "Clear the query and the filter on every load — Load Selected Feed and Refresh alike"
+          "text": "Exactly with the search box — same condition, placed next to it"
         },
         {
           "key": "B",
-          "text": "Clear only on 'Load Selected Feed'; Refresh keeps the query and re-applies it to the reloaded items"
-        },
-        {
-          "key": "C",
-          "text": "Never clear — the query always survives loads"
+          "text": "Always visible, disabled while no feed with items is loaded"
         }
       ],
       "rec": {
         "option": "A",
-        "why": "A stale filter over freshly loaded items is the classic 'why is my list empty' bug; starting clean after any load is one predictable rule that matches the glossary's idea that Refresh re-displays the feed as it is."
+        "why": "'Next to the feed search box' pins its place, and with zero loaded items there is nothing to reorder; an always-present but permanently dead control in the empty state adds noise without function."
       }
     },
     {
-      "id": "placement",
+      "id": "confirm-shared-understanding",
       "round": 1,
-      "title": "Where does the search box sit and when is it visible?",
-      "body": "The page has a feed-selection row (dropdown, Refresh, custom URL, Load button) and a feed-info header that appears once items are loaded. Filtering only means anything while a feed is loaded, but the box could still live in either place.",
+      "title": "Confirmation of shared understanding",
+      "body": "The picture after this round: a two-option Newest/Oldest control next to the feed search box, visible whenever the search box is, reorders only the currently loaded feed's already-loaded items client-side by publication date — no refetch. The active search filter keeps filtering and the count label keeps counting; an open detail stays open and follows its item. Undated items sort last in both directions, ties keep feed order, the sort is stable, and every successful load (Load or Refresh) resets the toggle to its default direction. Confirm this as the shared understanding to take into the Spec?",
       "options": [
         {
           "key": "A",
-          "text": "In the feed-info header area, shown only while a feed with items is loaded"
+          "text": "Yes — confirmed as stated"
         },
         {
           "key": "B",
-          "text": "In the feed-selection input row, always visible but disabled until items are loaded"
+          "text": "No — I will correct it in a note"
         }
       ],
       "rec": {
         "option": "A",
-        "why": "It keeps the feature scoped to the 'currently loaded feed' the sentence names, avoids a permanently disabled control in the selection row, and leaves the existing form and its tests untouched."
-      }
-    },
-    {
-      "id": "clear-control",
-      "round": 1,
-      "title": "Does the search box need a clear control?",
-      "body": "Beyond deleting the text by keyboard, a small clear affordance resets the filter in one action.",
-      "options": [
-        {
-          "key": "A",
-          "text": "Plain input only — visitors clear by deleting the text"
-        },
-        {
-          "key": "B",
-          "text": "A clear (×) button inside the box, visible only while the query is non-empty"
-        }
-      ],
-      "rec": {
-        "option": "A",
-        "why": "Minimal scope for one sentence of feature; a clear button is nice-to-have and can arrive as a follow-up without changing any settled behavior."
-      }
-    },
-    {
-      "id": "confirmation",
-      "round": 1,
-      "title": "Confirm shared understanding",
-      "body": "Settled so far: a client-side, real-time keyword search box over the currently loaded feed's items matching title and description. If you accept the recommendations above (case-insensitive AND substrings over visible text with no diacritic folding; distinct no-match message; 'X of Y item(s)' while filtering; detail open while its item still matches; query cleared on every load; box in the feed-info header with no clear button), the design tree is complete and the next step is /to-spec. Confirm, or answer the cards differently and a new round follows.",
-      "options": [
-        {
-          "key": "A",
-          "text": "Confirmed — shared understanding reached, proceed to the Spec"
-        },
-        {
-          "key": "B",
-          "text": "Not confirmed — my answers above change the picture; ask another round"
-        }
-      ],
-      "rec": {
-        "option": "A",
-        "why": "With the nine cards above answered, no branch of the design tree is left silently assumed; anything further (tests, wording) is Spec detail, not grill material."
+        "why": "This restates exactly what the round's answers pin down; confirming it ends the Grill and lets the Spec be written from a settled picture."
       }
     }
   ]

@@ -1153,3 +1153,378 @@ describe('RssFeedComponent feed search', () => {
     });
   });
 });
+
+describe('RssFeedComponent feed sort', () => {
+  let fixture: ComponentFixture<RssFeedComponent>;
+  let component: RssFeedComponent;
+  let http: HttpTestingController;
+
+  // Feed order deliberately differs from date order: Newest report is second,
+  // Oldest report is third.
+  const SORT_ITEMS: FeedItem[] = [
+    {
+      title: 'Older report',
+      link: 'https://example.com/older',
+      pubDate: 'Fri, 02 Jan 2026 08:00:00 GMT',
+      description: 'Zwischenstand',
+    },
+    {
+      title: 'Newest report',
+      link: 'https://example.com/newest',
+      pubDate: 'Sat, 03 Jan 2026 08:00:00 GMT',
+      description: 'Eilmeldung',
+    },
+    {
+      title: 'Oldest report',
+      link: 'https://example.com/oldest',
+      pubDate: 'Thu, 01 Jan 2026 08:00:00 GMT',
+      description: 'Erstmeldung',
+    },
+  ];
+
+  const TIE_ITEMS: FeedItem[] = [
+    {
+      title: 'Tie first',
+      link: 'https://example.com/tie-first',
+      pubDate: 'Fri, 02 Jan 2026 08:00:00 GMT',
+      description: 'Erste Meldung des Tages',
+    },
+    {
+      title: 'Tie second',
+      link: 'https://example.com/tie-second',
+      pubDate: 'Fri, 02 Jan 2026 08:00:00 GMT',
+      description: 'Zweite Meldung des Tages',
+    },
+  ];
+
+  const UNDATED_ITEMS: FeedItem[] = [
+    {
+      title: 'Undated first',
+      link: 'https://example.com/undated-first',
+      pubDate: '',
+      description: 'Ohne Datum',
+    },
+    {
+      title: 'Dated middle',
+      link: 'https://example.com/dated-middle',
+      pubDate: 'Fri, 02 Jan 2026 08:00:00 GMT',
+      description: 'Mit Datum',
+    },
+    {
+      title: 'Undated last',
+      link: 'https://example.com/undated-last',
+      pubDate: 'not-a-date',
+      description: 'Ungültiges Datum',
+    },
+  ];
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [RssFeedComponent],
+      providers: [provideHttpClient(), provideHttpClientTesting()],
+    })
+      // The test provides its own HttpClient so requests are intercepted.
+      .overrideComponent(RssFeedComponent, {
+        remove: { imports: [HttpClientModule] },
+      })
+      .compileComponents();
+
+    fixture = TestBed.createComponent(RssFeedComponent);
+    component = fixture.componentInstance;
+    http = TestBed.inject(HttpTestingController);
+    fixture.detectChanges();
+  });
+
+  afterEach(() => http.verify());
+
+  function flushPoliceFeeds() {
+    http.expectOne('/api/german-police-feeds').flush(PRESET_FEEDS);
+    fixture.detectChanges();
+  }
+
+  function setCustomUrl(value: string) {
+    const input: HTMLInputElement = fixture.nativeElement.querySelector(
+      'input[name="customFeedUrl"]',
+    );
+    input.value = value;
+    input.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+  }
+
+  function submit() {
+    const form: HTMLFormElement = fixture.nativeElement.querySelector('form.input-row');
+    form.dispatchEvent(new Event('submit'));
+    fixture.detectChanges();
+  }
+
+  function displayCustomFeed(items: FeedItem[]) {
+    flushPoliceFeeds();
+    setCustomUrl(CUSTOM_URL);
+    submit();
+    http.expectOne(CUSTOM_REQUEST).flush(items);
+    fixture.detectChanges();
+  }
+
+  function clickSort(option: 'newest' | 'oldest') {
+    const button: HTMLElement = fixture.nativeElement.querySelector(
+      `.sort-toggle .sort-option.sort-${option}`,
+    );
+    button.click();
+    fixture.detectChanges();
+  }
+
+  function renderedTitles(): string[] {
+    const titles = fixture.nativeElement.querySelectorAll('ul.feed-items a.feed-title');
+    return Array.from(titles, (title: HTMLElement) =>
+      (title.textContent ?? '').replace(/[▶▼]/g, '').trim(),
+    );
+  }
+
+  function sortButtons(): NodeListOf<HTMLElement> {
+    return fixture.nativeElement.querySelectorAll('.sort-toggle .sort-option');
+  }
+
+  function pressedLabels(): string[] {
+    return Array.from(sortButtons(), (button: HTMLElement) =>
+      button.getAttribute('aria-pressed') === 'true' ? (button.textContent ?? '').trim() : '',
+    ).filter((label) => label !== '');
+  }
+
+  function searchInput(): HTMLInputElement {
+    return fixture.nativeElement.querySelector('input.feed-search');
+  }
+
+  function typeSearch(value: string) {
+    const input = searchInput();
+    input.value = value;
+    input.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+  }
+
+  describe('US1: the toggle sorts the list by publication date', () => {
+    beforeEach(() => displayCustomFeed(SORT_ITEMS));
+
+    it('starts on Newest and displays dated items newest first', () => {
+      expect(component.sortDirection).toBe('newest');
+      expect(pressedLabels()).toEqual(['Newest']);
+      expect(renderedTitles()).toEqual(['Newest report', 'Older report', 'Oldest report']);
+    });
+
+    it('displays dated items oldest first under Oldest', () => {
+      clickSort('oldest');
+
+      expect(pressedLabels()).toEqual(['Oldest']);
+      expect(renderedTitles()).toEqual(['Oldest report', 'Older report', 'Newest report']);
+    });
+
+    it('flips back to Newest when Newest is clicked again', () => {
+      clickSort('oldest');
+      clickSort('newest');
+
+      expect(renderedTitles()).toEqual(['Newest report', 'Older report', 'Oldest report']);
+    });
+
+    it('reorders without any network request', () => {
+      clickSort('oldest');
+      clickSort('newest');
+
+      expect(component.feedItems.length).toBe(SORT_ITEMS.length);
+      http.verify();
+    });
+  });
+
+  describe('US2: items without a parseable date sort last in both directions', () => {
+    it('places undated items after every dated item under Newest', () => {
+      displayCustomFeed(UNDATED_ITEMS);
+
+      expect(renderedTitles()).toEqual(['Dated middle', 'Undated first', 'Undated last']);
+    });
+
+    it('places undated items after every dated item under Oldest', () => {
+      displayCustomFeed(UNDATED_ITEMS);
+      clickSort('oldest');
+
+      expect(renderedTitles()).toEqual(['Dated middle', 'Undated first', 'Undated last']);
+    });
+
+    it('keeps undated items displayed and counted under both directions', () => {
+      displayCustomFeed(UNDATED_ITEMS);
+      const meta = fixture.nativeElement.querySelector('.feed-meta') as HTMLElement;
+      expect(meta.textContent?.trim()).toBe('3 item(s)');
+
+      clickSort('oldest');
+
+      expect(fixture.nativeElement.querySelectorAll('ul.feed-items li').length).toBe(3);
+      expect((fixture.nativeElement.querySelector('.feed-meta') as HTMLElement).textContent?.trim()).toBe(
+        '3 item(s)',
+      );
+    });
+  });
+
+  describe('US3: ties keep feed order in both directions', () => {
+    beforeEach(() => displayCustomFeed(TIE_ITEMS));
+
+    it('keeps tied items in feed order under Newest', () => {
+      expect(renderedTitles()).toEqual(['Tie first', 'Tie second']);
+    });
+
+    it('keeps tied items in feed order under Oldest', () => {
+      clickSort('oldest');
+
+      expect(renderedTitles()).toEqual(['Tie first', 'Tie second']);
+    });
+  });
+
+  describe('US4: the direction resets to Newest on every successful load', () => {
+    it('resets when another feed loads via "Load Selected Feed"', () => {
+      displayCustomFeed(SORT_ITEMS);
+      clickSort('oldest');
+      expect(renderedTitles()).toEqual(['Oldest report', 'Older report', 'Newest report']);
+
+      setCustomUrl('https://other.example.net/rss.xml');
+      submit();
+      http
+        .expectOne(`/api/custom-rss?url=${encodeURIComponent('https://other.example.net/rss.xml')}`)
+        .flush(SORT_ITEMS);
+      fixture.detectChanges();
+
+      expect(component.sortDirection).toBe('newest');
+      expect(pressedLabels()).toEqual(['Newest']);
+      expect(renderedTitles()).toEqual(['Newest report', 'Older report', 'Oldest report']);
+    });
+
+    it('resets when the loaded feed is refreshed', () => {
+      displayCustomFeed(SORT_ITEMS);
+      clickSort('oldest');
+      expect(renderedTitles()).toEqual(['Oldest report', 'Older report', 'Newest report']);
+
+      fixture.nativeElement.querySelector('button.refresh-feed').click();
+      fixture.detectChanges();
+      http.expectOne(CUSTOM_REQUEST).flush(SORT_ITEMS);
+      fixture.detectChanges();
+
+      expect(component.sortDirection).toBe('newest');
+      expect(pressedLabels()).toEqual(['Newest']);
+      expect(renderedTitles()).toEqual(['Newest report', 'Older report', 'Oldest report']);
+    });
+  });
+
+  describe('US5: the search filter keeps working over the sorted list', () => {
+    beforeEach(() => displayCustomFeed(SORT_ITEMS));
+
+    it('displays the matching items in sorted order under both directions', () => {
+      typeSearch('report');
+      expect(renderedTitles()).toEqual(['Newest report', 'Older report', 'Oldest report']);
+
+      clickSort('oldest');
+      expect(renderedTitles()).toEqual(['Oldest report', 'Older report', 'Newest report']);
+    });
+
+    it('keeps the count "X of Y item(s)" unchanged while sorted', () => {
+      typeSearch('Eilmeldung');
+      const meta = fixture.nativeElement.querySelector('.feed-meta') as HTMLElement;
+      expect(meta.textContent?.trim()).toBe('1 of 3 item(s)');
+
+      clickSort('oldest');
+
+      expect(renderedTitles()).toEqual(['Newest report']);
+      expect((fixture.nativeElement.querySelector('.feed-meta') as HTMLElement).textContent?.trim()).toBe(
+        '1 of 3 item(s)',
+      );
+    });
+  });
+
+  describe('US6: an open detail survives a direction flip', () => {
+    beforeEach(() => displayCustomFeed(SORT_ITEMS));
+
+    function openDetailOf(title: string) {
+      const link = Array.from(
+        fixture.nativeElement.querySelectorAll('ul.feed-items a.feed-title') as Iterable<HTMLElement>,
+      ).find((candidate: HTMLElement) => candidate.textContent?.includes(title));
+      expect(link).toBeDefined();
+      link!.click();
+      fixture.detectChanges();
+      http
+        .expectOne({ method: 'POST', url: '/api/openrouter-chat' })
+        .flush({ choices: [{ message: { content: 'analysis' } }] });
+      http
+        .expectOne({ method: 'POST', url: '/api/analyze-rss-feed' })
+        .flush({ choices: [{ message: { content: '{"summary":"ok"}' } }] });
+      fixture.detectChanges();
+    }
+
+    it('keeps the open detail open at the item\'s new position', () => {
+      openDetailOf('Older report');
+      expect(fixture.nativeElement.querySelector('.details')).not.toBeNull();
+
+      clickSort('oldest');
+
+      const details = fixture.nativeElement.querySelectorAll('.details');
+      expect(details.length).toBe(1);
+      expect(details[0].closest('li').textContent).toContain('Older report');
+      const titles = renderedTitles();
+      expect(titles.indexOf('Older report')).toBe(1);
+      expect(component.selectedIndex).toBe(0);
+    });
+
+    it('keeps the open detail content after the flip', () => {
+      openDetailOf('Newest report');
+
+      clickSort('oldest');
+
+      const response = fixture.nativeElement.querySelector('.openrouter-response') as HTMLElement;
+      expect(response).not.toBeNull();
+      expect(response.textContent).toContain('analysis');
+    });
+  });
+
+  describe('US7: the segmented control, its placement, and its visibility', () => {
+    it('renders the Newest/Oldest pair next to the search box once a feed with items is loaded', () => {
+      displayCustomFeed(SORT_ITEMS);
+
+      const toggle = fixture.nativeElement.querySelector('.sort-toggle');
+      expect(toggle).not.toBeNull();
+      expect(toggle.closest('.feed-info')).not.toBeNull();
+      expect(sortButtons().length).toBe(2);
+      expect((sortButtons()[0] as HTMLElement).textContent?.trim()).toBe('Newest');
+      expect((sortButtons()[1] as HTMLElement).textContent?.trim()).toBe('Oldest');
+      expect(searchInput()).not.toBeNull();
+    });
+
+    it('declares exactly the active button with aria-pressed in both directions', () => {
+      displayCustomFeed(SORT_ITEMS);
+
+      expect((sortButtons()[0] as HTMLElement).getAttribute('aria-pressed')).toBe('true');
+      expect((sortButtons()[1] as HTMLElement).getAttribute('aria-pressed')).toBe('false');
+
+      clickSort('oldest');
+
+      expect((sortButtons()[0] as HTMLElement).getAttribute('aria-pressed')).toBe('false');
+      expect((sortButtons()[1] as HTMLElement).getAttribute('aria-pressed')).toBe('true');
+    });
+
+    it('marks the active button visually', () => {
+      displayCustomFeed(SORT_ITEMS);
+
+      expect((sortButtons()[0] as HTMLElement).classList.contains('active')).toBeTrue();
+      expect((sortButtons()[1] as HTMLElement).classList.contains('active')).toBeFalse();
+
+      clickSort('oldest');
+
+      expect((sortButtons()[0] as HTMLElement).classList.contains('active')).toBeFalse();
+      expect((sortButtons()[1] as HTMLElement).classList.contains('active')).toBeTrue();
+    });
+
+    it('renders no toggle while no feed has been loaded', () => {
+      flushPoliceFeeds();
+
+      expect(fixture.nativeElement.querySelector('.sort-toggle')).toBeNull();
+    });
+
+    it('renders no toggle when the loaded feed has zero items', () => {
+      displayCustomFeed([]);
+
+      expect(fixture.nativeElement.querySelector('.sort-toggle')).toBeNull();
+    });
+  });
+});

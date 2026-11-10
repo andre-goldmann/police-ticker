@@ -4,6 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { HttpClient, HttpClientModule } from '@angular/common/http';
 
 import { feedItemMatchesQuery } from './feed-item-search';
+import { FeedSortDirection, sortFeedIndices } from './feed-item-sort';
 
 export interface PoliceFeed {
   name: string;
@@ -38,6 +39,8 @@ export class RssFeedComponent implements OnInit {
   openrouterResponse: any = null;
   /** Current text of the feed search box; filters the loaded items client-side. */
   searchQuery = '';
+  /** Direction of the publication-date sort over the displayed items. */
+  sortDirection: FeedSortDirection = 'newest';
 
   policeFeeds: PoliceFeed[] = [];
   loadingFeeds = false;
@@ -121,6 +124,24 @@ export class RssFeedComponent implements OnInit {
       }
     });
     return indices;
+  }
+
+  /**
+   * Sets the publication-date sort direction; the list reorders client-side
+   * without any network request.
+   */
+  setSortDirection(direction: FeedSortDirection) {
+    this.sortDirection = direction;
+  }
+
+  /**
+   * Indices into `feedItems` of the displayed items — the search matches in
+   * original order, reordered by publication date under the active sort
+   * direction, so `selectedIndex` keeps pointing into the full `feedItems`
+   * array and an open detail follows its item when the direction flips.
+   */
+  get displayedFeedIndices(): number[] {
+    return sortFeedIndices(this.matchingFeedIndices, this.feedItems, this.sortDirection);
   }
 
   /**
@@ -215,8 +236,10 @@ export class RssFeedComponent implements OnInit {
           this.feedItems = items;
         }
         this.loadedFeed = { url: feedUrl, kind };
-        // A fresh feed load always shows its full list — reset the search box.
+        // A fresh feed load always shows its full list — reset the search box
+        // and the sort direction to their defaults.
         this.searchQuery = '';
+        this.sortDirection = 'newest';
         this.loading = false;
       },
       error: (err) => {
