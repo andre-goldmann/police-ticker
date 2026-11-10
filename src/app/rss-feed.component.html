@@ -46,27 +46,35 @@
     <h3>{{ loadedFeedInfo.name }}</h3>
     <p>{{ loadedFeedInfo.description }}</p>
     <div class="feed-meta">
-      <span>{{ feedItems.length }} item(s)</span>
+      <span>{{ itemCountLabel }}</span>
     </div>
+    <input
+      type="text"
+      name="feedSearch"
+      class="feed-search"
+      [(ngModel)]="searchQuery"
+      placeholder="Search title and description..."
+      aria-label="Search feed items"
+    />
   </div>
-  
+
   <ul *ngIf="feedItems.length" class="feed-items">
-    <li *ngFor="let item of feedItems; let i = index" [class.selected]="selectedIndex === i">
-      <a href="#" (click)="showDetails(i, $event)" class="feed-title">
-        {{ item.title }}
-        <small class="feed-indicator" *ngIf="selectedIndex === i">▼</small>
-        <small class="feed-indicator" *ngIf="selectedIndex !== i">▶</small>
+    <li *ngFor="let index of matchingFeedIndices" [class.selected]="selectedIndex === index">
+      <a href="#" (click)="showDetails(index, $event)" class="feed-title">
+        {{ feedItems[index].title }}
+        <small class="feed-indicator" *ngIf="selectedIndex === index">▼</small>
+        <small class="feed-indicator" *ngIf="selectedIndex !== index">▶</small>
       </a>
       <div class="pub-date">
         <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <circle cx="12" cy="12" r="10"></circle>
           <polyline points="12 6 12 12 16 14"></polyline>
         </svg>
-        {{ item.pubDate }}
+        {{ feedItems[index].pubDate }}
       </div>
-      <div *ngIf="selectedIndex === i" class="details">
-        <div class="description" [innerHTML]="item.description"></div>
-        <a [href]="item.link" target="_blank" class="read-original">
+      <div *ngIf="selectedIndex === index" class="details">
+        <div class="description" [innerHTML]="feedItems[index].description"></div>
+        <a [href]="feedItems[index].link" target="_blank" class="read-original">
           <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
             <polyline points="15 3 21 3 21 9"></polyline>
@@ -108,7 +116,11 @@
       </div>
     </li>
   </ul>
-  
+
+  <div *ngIf="hasActiveSearch && !matchingFeedIndices.length" class="no-search-results">
+    No items match your search.
+  </div>
+
   <div *ngIf="!loading && !feedItems.length && !error" class="empty">
     <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
       <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>

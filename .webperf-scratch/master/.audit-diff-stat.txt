@@ -1,0 +1,19 @@
+ CONTEXT.md                                         |  17 +
+ ...custom-rss-feed-source-and-host-restrictions.md |  54 +++
+ package-lock.json                                  | 260 ++++----------
+ package.json                                       |   6 +-
+ pr-body-temp.md                                    |  56 +++
+ proof/1280.png                                     | Bin 0 -> 31876 bytes
+ proof/375.png                                      | Bin 0 -> 26042 bytes
+ server-tests/custom-rss.test.ts                    | 219 ++++++++++++
+ server-tests/rss-redirect.test.ts                  |  57 ++++
+ server-tests/runtime-modules.d.ts                  |  22 ++
+ server-tests/setup-ssr-manifest.ts                 |  15 +
+ src/app/rss-feed.component.html                    |   8 +-
+ src/app/rss-feed.component.spec.ts                 | 378 +++++++++++++++++++++
+ src/app/rss-feed.component.ts                      |  50 ++-
+ src/custom-rss-url-guard.ts                        | 204 +++++++++++
+ src/openrouter-client.ts                           |  98 +++++-
+ src/server.ts                                      |  20 +-
+ tsconfig.server-tests.json                         |  17 +
+ 18 files changed, 1259 insertions(+), 222 deletions(-)

@@ -1,0 +1,27 @@
+import { createRequire } from 'node:module';
+import { spawn } from 'node:child_process';
+import { setTimeout as sleep } from 'node:timers/promises';
+const require = createRequire(import.meta.url);
+const { WebSocket } = require('ws');
+const CHROME = '/home/soulsaver/.cache/ms-playwright/chromium-1248/chrome-linux64/chrome';
+const PORT = 9336;
+const BASE = process.argv[2];
+const chrome = spawn(CHROME, ['--headless=new','--no-sandbox','--disable-gpu',`--remote-debugging-port=${PORT}`,`--user-data-dir=${process.cwd()}/.webperf-scratch/chrome-profile2`,'about:blank'],{stdio:'ignore'});
+process.on('exit',()=>{try{chrome.kill('SIGKILL')}catch{}});
+let msgId=0; const pending=new Map(); const reqs=[]; const logs=[]; let ws;
+const send=(m,p={},s)=>new Promise((res,rej)=>{const id=++msgId;pending.set(id,{res,rej});ws.send(JSON.stringify({id,method:m,params:p,...(s?{sessionId:s}:{})}))});
+for(let i=0;i<40;i++){try{if((await fetch(`http://127.0.0.1:${PORT}/json/version`)).ok)break}catch{}await sleep(250)}
+const t=(await (await fetch(`http://127.0.0.1:${PORT}/json/list`)).json()).find(x=>x.type==='page');
+ws=new WebSocket(t.webSocketDebuggerUrl,{maxPayload:512*1024*1024});
+await new Promise(r=>ws.once('open',r));
+ws.on('message',d=>{const m=JSON.parse(d.toString());if(m.id&&pending.has(m.id)){pending.get(m.id).res(m.result);pending.delete(m.id)}else if(m.method==='Network.responseReceived')reqs.push(m.params.response.status+' '+m.params.response.url.slice(0,120));else if(m.method==='Runtime.consoleAPICalled')logs.push(m.params.type+': '+(m.params.args||[]).map(a=>(a.value??a.description??'')).join(' ').slice(0,150))});
+const {sessionId}=await send('Target.attachToTarget',{targetId:t.id,flatten:true});
+await send('Network.enable',{},sessionId); await send('Runtime.enable',{},sessionId); await send('Page.enable',{},sessionId);
+await send('Page.navigate',{url:BASE},sessionId);
+await sleep(3000);
+const ev=async e=>(await send('Runtime.evaluate',{expression:e,returnByValue:true},sessionId)).result?.value;
+console.log('SCRIPTS', await ev(`JSON.stringify([...document.scripts].map(s=>s.src.split('/').pop()))`));
+console.log('API_OPTION_COUNT', await ev(`document.querySelectorAll('select[name="feedSelect"] option').length`));
+console.log('REQS', JSON.stringify(reqs.slice(0,10)));
+console.log('CONSOLE', JSON.stringify(logs.slice(0,8)));
+process.exit(0);

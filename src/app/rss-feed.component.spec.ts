@@ -819,3 +819,337 @@ describe('RssFeedComponent feed header names the loaded feed', () => {
     expect(fixture.nativeElement.querySelector('.feed-info')).toBeNull();
   });
 });
+
+const SEARCH_ITEMS: FeedItem[] = [
+  {
+    title: 'Brand in Leipzig',
+    link: 'https://example.com/brand',
+    pubDate: 'Mon, 01 Jan 2026 00:00:00 GMT',
+    description: 'Großeinsatz der Feuerwehr in der Innenstadt',
+  },
+  {
+    title: 'Unfall auf der A4',
+    link: 'https://example.com/unfall',
+    pubDate: 'Mon, 01 Jan 2026 00:00:00 GMT',
+    description: 'Autobahn',
+  },
+  {
+    title: 'Polizei sucht Zeugen',
+    link: 'https://example.com/zeugen',
+    pubDate: 'Mon, 01 Jan 2026 00:00:00 GMT',
+    description: 'Hinweise zu einem Vorfall in Leipzig gesucht',
+  },
+];
+
+describe('RssFeedComponent feed search', () => {
+  let fixture: ComponentFixture<RssFeedComponent>;
+  let component: RssFeedComponent;
+  let http: HttpTestingController;
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [RssFeedComponent],
+      providers: [provideHttpClient(), provideHttpClientTesting()],
+    })
+      // The test provides its own HttpClient so requests are intercepted.
+      .overrideComponent(RssFeedComponent, {
+        remove: { imports: [HttpClientModule] },
+      })
+      .compileComponents();
+
+    fixture = TestBed.createComponent(RssFeedComponent);
+    component = fixture.componentInstance;
+    http = TestBed.inject(HttpTestingController);
+    fixture.detectChanges();
+  });
+
+  afterEach(() => http.verify());
+
+  function flushPoliceFeeds() {
+    http.expectOne('/api/german-police-feeds').flush(PRESET_FEEDS);
+    fixture.detectChanges();
+  }
+
+  function setCustomUrl(value: string) {
+    const input: HTMLInputElement = fixture.nativeElement.querySelector(
+      'input[name="customFeedUrl"]',
+    );
+    input.value = value;
+    input.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+  }
+
+  function submit() {
+    const form: HTMLFormElement = fixture.nativeElement.querySelector('form.input-row');
+    form.dispatchEvent(new Event('submit'));
+    fixture.detectChanges();
+  }
+
+  function errorText(): string {
+    const element = fixture.nativeElement.querySelector('.error');
+    return element ? element.textContent.trim() : '';
+  }
+
+  function presetRequest(feed: PoliceFeed): string {
+    return `/api/custom-rss?url=${encodeURIComponent(feed.url)}`;
+  }
+
+  function displayPresetFeed(items: FeedItem[] = SEARCH_ITEMS) {
+    flushPoliceFeeds();
+    setCustomUrl('');
+    submit();
+    http.expectOne(presetRequest(component.policeFeeds[0])).flush(items);
+    fixture.detectChanges();
+  }
+
+  function displayCustomFeed(items: FeedItem[] = SEARCH_ITEMS) {
+    flushPoliceFeeds();
+    setCustomUrl(CUSTOM_URL);
+    submit();
+    http.expectOne(CUSTOM_REQUEST).flush(items);
+    fixture.detectChanges();
+  }
+
+  function searchInput(): HTMLInputElement {
+    return fixture.nativeElement.querySelector('input.feed-search');
+  }
+
+  function typeSearch(value: string) {
+    const input = searchInput();
+    input.value = value;
+    input.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+  }
+
+  function renderedTitles(): string[] {
+    const titles = fixture.nativeElement.querySelectorAll('ul.feed-items a.feed-title');
+    return Array.from(titles, (title: HTMLElement) =>
+      (title.textContent ?? '').replace(/[▶▼]/g, '').trim(),
+    );
+  }
+
+  describe('US1: the search box appears only for a loaded feed with items', () => {
+    it('renders exactly one search input inside the feed-info area once a load succeeds', () => {
+      displayCustomFeed();
+
+      const inputs = fixture.nativeElement.querySelectorAll('input.feed-search');
+      expect(inputs.length).toBe(1);
+      expect(inputs[0].closest('.feed-info')).not.toBeNull();
+    });
+
+    it('renders no search input while no feed has been loaded', () => {
+      flushPoliceFeeds();
+
+      expect(fixture.nativeElement.querySelector('input.feed-search')).toBeNull();
+      expect(fixture.nativeElement.querySelector('.feed-info')).toBeNull();
+    });
+
+    it('renders no search input when the loaded feed has zero items', () => {
+      displayCustomFeed([]);
+
+      expect(fixture.nativeElement.querySelector('input.feed-search')).toBeNull();
+    });
+  });
+
+  describe('US2: real-time AND filtering by title and description', () => {
+    beforeEach(() => displayCustomFeed());
+
+    it('updates the list per keystroke without a button press or any network request', () => {
+      typeSearch('leipzig');
+      expect(renderedTitles()).toEqual(['Brand in Leipzig', 'Polizei sucht Zeugen']);
+
+      typeSearch('leipzig feuerwehr');
+      expect(renderedTitles()).toEqual(['Brand in Leipzig']);
+
+      typeSearch('feuerwehr leipzig');
+      expect(renderedTitles()).toEqual(['Brand in Leipzig']);
+
+      typeSearch('LEIPZIG');
+      expect(renderedTitles()).toEqual(['Brand in Leipzig', 'Polizei sucht Zeugen']);
+
+      // Typing filtered in real time; HttpClient was not called again.
+      expect(component.feedItems.length).toBe(SEARCH_ITEMS.length);
+      http.verify();
+    });
+
+    it('matches query words against the description text, not just the title', () => {
+      typeSearch('autobahn');
+      expect(renderedTitles()).toEqual(['Unfall auf der A4']);
+    });
+
+    it('restores the full loaded list in original order when the query is emptied', () => {
+      typeSearch('leipzig');
+      expect(renderedTitles().length).toBe(2);
+
+      typeSearch('');
+      expect(renderedTitles()).toEqual([
+        'Brand in Leipzig',
+        'Unfall auf der A4',
+        'Polizei sucht Zeugen',
+      ]);
+    });
+  });
+
+  describe('US5: the count shows "X of Y" while filtering', () => {
+    beforeEach(() => displayCustomFeed());
+
+    function itemCountText(): string {
+      const meta = fixture.nativeElement.querySelector('.feed-meta') as HTMLElement;
+      return meta.textContent?.trim() ?? '';
+    }
+
+    it('shows "2 of 3 item(s)" while a query matches two of three items', () => {
+      typeSearch('leipzig');
+      expect(itemCountText()).toBe('2 of 3 item(s)');
+    });
+
+    it('shows "X of Y item(s)" with no matches', () => {
+      typeSearch('xyzzy');
+      expect(itemCountText()).toBe('0 of 3 item(s)');
+    });
+
+    it('shows "3 item(s)" with an empty query', () => {
+      expect(itemCountText()).toBe('3 item(s)');
+    });
+  });
+
+  describe('US6: the distinct no-match message', () => {
+    beforeEach(() => displayCustomFeed());
+
+    it('shows "No items match your search." with no items and no generic empty state', () => {
+      typeSearch('xyzzy');
+
+      const noMatch = fixture.nativeElement.querySelector('.no-search-results') as HTMLElement;
+      expect(noMatch).not.toBeNull();
+      expect(noMatch.textContent?.trim()).toBe('No items match your search.');
+      expect(fixture.nativeElement.querySelectorAll('ul.feed-items li').length).toBe(0);
+      expect(fixture.nativeElement.querySelector('.empty')).toBeNull();
+    });
+
+    it('is absent with no active query', () => {
+      typeSearch('leipzig');
+      typeSearch('');
+
+      expect(fixture.nativeElement.querySelector('.no-search-results')).toBeNull();
+      expect(fixture.nativeElement.querySelectorAll('ul.feed-items li').length).toBe(3);
+    });
+  });
+
+  describe('US7: open detail persists while its item still matches', () => {
+    beforeEach(() => displayCustomFeed());
+
+    function openDetailOf(title: string) {
+      const link = Array.from(
+        fixture.nativeElement.querySelectorAll('ul.feed-items a.feed-title') as Iterable<HTMLElement>,
+      ).find((candidate: HTMLElement) => candidate.textContent?.includes(title));
+      expect(link).toBeDefined();
+      link!.click();
+      fixture.detectChanges();
+      http
+        .expectOne({ method: 'POST', url: '/api/openrouter-chat' })
+        .flush({ choices: [{ message: { content: 'analysis' } }] });
+      http
+        .expectOne({ method: 'POST', url: '/api/analyze-rss-feed' })
+        .flush({ choices: [{ message: { content: '{"summary":"ok"}' } }] });
+      fixture.detectChanges();
+    }
+
+    it('keeps item A\'s detail expanded while the query still matches it', () => {
+      openDetailOf('Brand in Leipzig');
+      expect(fixture.nativeElement.querySelector('.details')).not.toBeNull();
+
+      typeSearch('leipzig');
+
+      expect(component.selectedIndex).toBe(0);
+      expect(component.feedItems[0].title).toBe('Brand in Leipzig');
+      const details = fixture.nativeElement.querySelectorAll('.details');
+      expect(details.length).toBe(1);
+      expect(details[0].closest('li').textContent).toContain('Brand in Leipzig');
+    });
+
+    it('collapses the detail when the item is filtered out', () => {
+      openDetailOf('Brand in Leipzig');
+
+      typeSearch('autobahn');
+
+      expect(fixture.nativeElement.querySelectorAll('ul.feed-items li').length).toBe(1);
+      expect(fixture.nativeElement.querySelector('.details')).toBeNull();
+    });
+
+    it('shows the detail again when the item matches the query once more', () => {
+      openDetailOf('Brand in Leipzig');
+
+      typeSearch('autobahn');
+      expect(fixture.nativeElement.querySelector('.details')).toBeNull();
+
+      typeSearch('');
+      expect(fixture.nativeElement.querySelector('.details')).not.toBeNull();
+      expect(component.selectedIndex).toBe(0);
+    });
+  });
+
+  describe('US8: the query resets on every successful feed load', () => {
+    it('resets the query when a preset feed loads via "Load Selected Feed"', () => {
+      displayPresetFeed();
+      typeSearch('leipzig');
+      expect(renderedTitles().length).toBe(2);
+
+      component.selectedFeed = PRESET_FEEDS[0];
+      fixture.detectChanges();
+      submit();
+      http.expectOne(presetRequest(PRESET_FEEDS[0])).flush(SEARCH_ITEMS);
+      fixture.detectChanges();
+
+      expect(searchInput().value).toBe('');
+      expect(renderedTitles()).toEqual([
+        'Brand in Leipzig',
+        'Unfall auf der A4',
+        'Polizei sucht Zeugen',
+      ]);
+    });
+
+    it('resets the query when a custom feed loads via "Load Selected Feed"', () => {
+      displayPresetFeed();
+      typeSearch('leipzig');
+
+      setCustomUrl('https://other.example.net/rss.xml');
+      submit();
+      http
+        .expectOne(`/api/custom-rss?url=${encodeURIComponent('https://other.example.net/rss.xml')}`)
+        .flush(SEARCH_ITEMS);
+      fixture.detectChanges();
+
+      expect(searchInput().value).toBe('');
+      expect(renderedTitles().length).toBe(3);
+    });
+
+    it('resets the query when the loaded feed is refreshed', () => {
+      displayCustomFeed();
+      typeSearch('leipzig');
+      expect(renderedTitles().length).toBe(2);
+
+      fixture.nativeElement.querySelector('button.refresh-feed').click();
+      fixture.detectChanges();
+      http.expectOne(CUSTOM_REQUEST).flush(SEARCH_ITEMS);
+      fixture.detectChanges();
+
+      expect(searchInput().value).toBe('');
+      expect(renderedTitles().length).toBe(3);
+    });
+
+    it('keeps the query when a load fails and shows the error banner as before', () => {
+      displayCustomFeed();
+      typeSearch('leipzig');
+
+      setCustomUrl('https://failing.example.net/rss.xml');
+      submit();
+      http
+        .expectOne(`/api/custom-rss?url=${encodeURIComponent('https://failing.example.net/rss.xml')}`)
+        .flush({ error: 'Upstream feed is unavailable' }, { status: 502, statusText: 'Bad Gateway' });
+      fixture.detectChanges();
+
+      expect(component.searchQuery).toBe('leipzig');
+      expect(errorText()).toBe('Upstream feed is unavailable');
+    });
+  });
+});

@@ -161,6 +161,11 @@ li {
   margin-bottom: 0.5rem;
 }
 
+.no-search-results {
+  color: #888;
+  font-style: italic;
+}
+
 .description {
   margin-top: 0.5rem;
   color: #333;
@@ -252,6 +257,15 @@ li {
     margin: 0;
     color: #7f8c8d;
     font-size: 0.9rem;
+  }
+  
+  .feed-search {
+    width: 100%;
+    margin-top: 0.6rem;
+    padding: 0.5rem 0.6rem;
+    border-radius: 4px;
+    border: 1px solid #ccc;
+    font-size: 0.95rem;
   }
   
   .feed-analysis {

@@ -3,6 +3,8 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { HttpClient, HttpClientModule } from '@angular/common/http';
 
+import { feedItemMatchesQuery } from './feed-item-search';
+
 export interface PoliceFeed {
   name: string;
   url: string;
@@ -34,6 +36,8 @@ export class RssFeedComponent implements OnInit {
   error: string | null = null;
   selectedIndex: number | null = null;
   openrouterResponse: any = null;
+  /** Current text of the feed search box; filters the loaded items client-side. */
+  searchQuery = '';
 
   policeFeeds: PoliceFeed[] = [];
   loadingFeeds = false;
@@ -92,6 +96,40 @@ export class RssFeedComponent implements OnInit {
       return { name: preset.name, description: preset.description };
     }
     return { name: new URL(loaded.url).hostname, description: 'Custom feed' };
+  }
+
+  /**
+   * True while the search box holds a non-whitespace query, i.e. the item list
+   * and the item count reflect the filtered subset.
+   */
+  get hasActiveSearch(): boolean {
+    return this.searchQuery.trim() !== '';
+  }
+
+  /**
+   * Indices into `feedItems` of the items matching the search box, in original
+   * order — every index while the query is empty. Indices rather than filtered
+   * items so open-detail state (`selectedIndex`) keeps pointing into the full
+   * `feedItems` array while the list is filtered.
+   */
+  get matchingFeedIndices(): number[] {
+    const query = this.searchQuery;
+    const indices: number[] = [];
+    this.feedItems.forEach((item, index) => {
+      if (feedItemMatchesQuery(query, item)) {
+        indices.push(index);
+      }
+    });
+    return indices;
+  }
+
+  /**
+   * "X of Y item(s)" while a search is active, otherwise the plain item count.
+   */
+  get itemCountLabel(): string {
+    return this.hasActiveSearch
+      ? `${this.matchingFeedIndices.length} of ${this.feedItems.length} item(s)`
+      : `${this.feedItems.length} item(s)`;
   }
 
   ngOnInit() {
@@ -177,6 +215,8 @@ export class RssFeedComponent implements OnInit {
           this.feedItems = items;
         }
         this.loadedFeed = { url: feedUrl, kind };
+        // A fresh feed load always shows its full list — reset the search box.
+        this.searchQuery = '';
         this.loading = false;
       },
       error: (err) => {
