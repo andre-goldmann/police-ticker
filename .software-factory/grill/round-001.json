@@ -1,179 +1,167 @@
 {
   "round": 1,
-  "branch": "factory/7b2adfc9",
-  "archivedAt": "2026-11-10T12:12:20.116Z",
-  "raw": "```json\n{\n  \"cards\": [\n    {\n      \"id\": \"sort-default\",\n      \"title\": \"Initial sort state after a feed loads\",\n      \"body\": \"Today a loaded feed displays items in the order the server returned them. Once the toggle exists, which state is it in — and therefore which order does the list show — immediately after a successful load?\",\n      \"options\": [\n        { \"key\": \"a\", \"text\": \"Newest first — the toggle starts on 'Newest' and the loaded list is sorted by publication date right away\" },\n        { \"key\": \"b\", \"text\": \"Newest selected but list in feed order — the toggle shows 'Newest' while the display stays in server order until the user toggles\" },\n        { \"key\": \"c\", \"text\": \"Feed order until the first toggle — the list shows server order until the user picks a direction\" }\n      ],\n      \"rec\": {\n        \"option\": \"a\",\n        \"why\": \"The toggle is the only control over order, so its displayed state must match what the list shows; a control claiming 'Newest' over feed order (b) would lie, and (c) leaves the toggle's meaning undefined until clicked. Police feeds are usually newest-first anyway, so (a) is typically a no-op on load and only changes the outcome for feeds that arrive out of order — exactly the case this feature targets.\"\n      }\n    },\n    {\n      \"id\": \"sort-reset-on-load\",\n      \"title\": \"Sort state across Load and Refresh\",\n      \"body\": \"loadFeed() already resets the search box on every successful load, and Refresh reloads the currently loaded feed. Does the toggle keep the user's chosen direction across a Refresh or a newly loaded feed, or reset to its default state like the search box?\",\n      \"options\": [\n        { \"key\": \"a\", \"text\": \"Reset to the default direction on every successful load, like the search box\" },\n        { \"key\": \"b\", \"text\": \"Keep the user's chosen direction across loads within the session\" }\n      ],\n      \"rec\": {\n        \"option\": \"a\",\n        \"why\": \"The existing rule is that a fresh load shows the feed's full list in a fresh state; carrying a sort direction across loads would silently reorder a feed the user just swapped, and 'Refresh' would then show a different order than the same feed's first load.\"\n      }\n    },\n    {\n      \"id\": \"missing-dates\",\n      \"title\": \"Items without a parseable publication date\",\n      \"body\": \"The sort key is each item's pubDate. Some feeds omit pubDate or ship a string that cannot be parsed as a date. Where do such items land while 'Newest' or 'Oldest' is active?\",\n      \"options\": [\n        { \"key\": \"a\", \"text\": \"Always last in both directions, keeping their relative feed order among themselves\" },\n        { \"key\": \"b\", \"text\": \"Treated as the oldest possible time, so they sink to the bottom under 'Newest' and rise to the top under 'Oldest'\" },\n        { \"key\": \"c\", \"text\": \"Left out of the sorted list entirely\" }\n      ],\n      \"rec\": {\n        \"option\": \"a\",\n        \"why\": \"An item must not vanish because its date is missing — (c) would hide content the item-count label still counts, breaking the count. (b) puts undated items above dated ones under 'Oldest', which reads as a false claim of recency; pinning them last in both directions keeps them reachable and never above a dated item.\"\n      }\n    },\n    {\n      \"id\": \"tie-order\",\n      \"title\": \"Items with identical timestamps\",\n      \"body\": \"When two loaded items carry the same publication date, which order do they display in under 'Newest' and under 'Oldest'?\",\n      \"options\": [\n        { \"key\": \"a\", \"text\": \"Their original feed order in both directions (stable sort)\" },\n        { \"key\": \"b\", \"text\": \"Feed order under 'Newest', reversed feed order under 'Oldest'\" }\n      ],\n      \"rec\": {\n        \"option\": \"a\",\n        \"why\": \"A stable sort makes the display predictable and keeps the two directions exact mirrors of each other; ties are common when a feed stamps the same day-level date on several reports, and flipping the toggle then reshuffling those tied items for no visible reason would look like a bug.\"\n      }\n    },\n    {\n      \"id\": \"detail-on-resort\",\n      \"title\": \"Open item detail when the direction flips\",\n      \"body\": \"The list renders indices into feedItems and selectedIndex points into that array. When the user flips the toggle while an item's detail (including a possibly still-loading AI summary) is open, what happens to that open detail?\",\n      \"options\": [\n        { \"key\": \"a\", \"text\": \"It stays open and moves with its item to the item's new position\" },\n        { \"key\": \"b\", \"text\": \"It closes when the direction changes\" }\n      ],\n      \"rec\": {\n        \"option\": \"a\",\n        \"why\": \"The feature states the open detail keeps working as today: like the search filter today, reordering the displayed indices does not change which item is selected, so closing it would be a regression and would discard an in-flight or completed analysis the user explicitly opened.\"\n      }\n    },\n    {\n      \"id\": \"toggle-ui\",\n      \"title\": \"Shape of the toggle control\",\n      \"body\": \"What control sits next to the feed search box to choose between Newest and Oldest?\",\n      \"options\": [\n        { \"key\": \"a\", \"text\": \"One two-state button showing the current direction ('Newest' or 'Oldest') that flips on click\" },\n        { \"key\": \"b\", \"text\": \"A segmented pair of buttons, one per direction, with the active one visually marked (aria-pressed)\" },\n        { \"key\": \"c\", \"text\": \"A dropdown select offering the two directions\" }\n      ],\n      \"rec\": {\n        \"option\": \"b\",\n        \"why\": \"Both options are visible at once, so the existence of the other order is discoverable without clicking, and the active state is declared rather than inferred; a flipping button (a) changes its own label on every click, and a dropdown (c) hides a two-value choice behind an extra interaction.\"\n      }\n    },\n    {\n      \"id\": \"toggle-visibility\",\n      \"title\": \"When the toggle is visible\",\n      \"body\": \"The search box renders only while a feed is loaded and has items (loadedFeed && feedItems.length). When should the sort toggle render?\",\n      \"options\": [\n        { \"key\": \"a\", \"text\": \"Exactly with the search box — same condition, placed next to it\" },\n        { \"key\": \"b\", \"text\": \"Always visible, disabled while no feed with items is loaded\" }\n      ],\n      \"rec\": {\n        \"option\": \"a\",\n        \"why\": \"'Next to the feed search box' pins its place, and with zero loaded items there is nothing to reorder; an always-present but permanently dead control in the empty state adds noise without function.\"\n      }\n    },\n    {\n      \"id\": \"confirm-shared-understanding\",\n      \"title\": \"Confirmation of shared understanding\",\n      \"body\": \"The picture after this round: a two-option Newest/Oldest control next to the feed search box, visible whenever the search box is, reorders only the currently loaded feed's already-loaded items client-side by publication date — no refetch. The active search filter keeps filtering and the count label keeps counting; an open detail stays open and follows its item. Undated items sort last in both directions, ties keep feed order, the sort is stable, and every successful load (Load or Refresh) resets the toggle to its default direction. Confirm this as the shared understanding to take into the Spec?\",\n      \"options\": [\n        { \"key\": \"a\", \"text\": \"Yes — confirmed as stated\" },\n        { \"key\": \"b\", \"text\": \"No — I will correct it in a note\" }\n      ],\n      \"rec\": {\n        \"option\": \"a\",\n        \"why\": \"This restates exactly what the round's answers pin down; confirming it ends the Grill and lets the Spec be written from a settled picture.\"\n      }\n    }\n  ]\n}\n```",
+  "branch": "factory/f1f00415",
+  "archivedAt": "2026-11-10T19:56:52.435Z",
+  "raw": "GRILL_JSON\n{\n  \"cards\": [\n    {\n      \"id\": \"scope-feeds\",\n      \"title\": \"Which feeds auto-refresh?\",\n      \"body\": \"The feature says the \\\"currently loaded feed\\\" re-fetches every 60 seconds. The glossary defines that as preset or custom. Does the timer apply to both, or only preset feeds?\",\n      \"options\": [\n        { \"key\": \"a\", \"text\": \"Both preset and custom feeds\" },\n        { \"key\": \"b\", \"text\": \"Preset feeds only\" }\n      ],\n      \"rec\": {\n        \"option\": \"a\",\n        \"why\": \"The glossary's \\\"currently loaded feed\\\" covers both kinds, and custom-feed readers want fresh items just as much; splitting the behavior adds a special case.\"\n      }\n    },\n    {\n      \"id\": \"timer-reset\",\n      \"title\": \"When does the 60-second interval restart?\",\n      \"body\": \"After which events does the next automatic re-fetch come a full 60 seconds later?\",\n      \"options\": [\n        { \"key\": \"a\", \"text\": \"Reset on every load and refresh, manual or automatic\" },\n        { \"key\": \"b\", \"text\": \"Fixed wall-clock tick every 60s, unaffected by manual refresh\" },\n        { \"key\": \"c\", \"text\": \"Reset only on manual actions, automatic refreshes don't reset it\" }\n      ],\n      \"rec\": {\n        \"option\": \"a\",\n        \"why\": \"A manual click already delivered fresh data, so counting the next auto-fetch from it avoids a pointless double fetch and keeps the cadence predictable.\"\n      }\n    },\n    {\n      \"id\": \"error-handling\",\n      \"title\": \"What happens when an automatic re-fetch fails?\",\n      \"body\": \"If the background re-fetch gets a network error, a non-200, or a 400 from the host guard, what should the app do?\",\n      \"options\": [\n        { \"key\": \"a\", \"text\": \"Show the existing error banner and keep the timer running\" },\n        { \"key\": \"b\", \"text\": \"Show the banner and pause the timer until a manual refresh or new load restarts it\" },\n        { \"key\": \"c\", \"text\": \"Silently keep the old items, no banner, keep the timer running\" }\n      ],\n      \"rec\": {\n        \"option\": \"b\",\n        \"why\": \"A dead feed would otherwise re-banner every 60 seconds; surfacing the failure once and stopping until the person acts keeps the error visible without spamming.\"\n      }\n    },\n    {\n      \"id\": \"in-flight-overlap\",\n      \"title\": \"What if a re-fetch is still running at the next tick?\",\n      \"body\": \"A slow or hung request can still be in flight when 60 seconds have passed. What then?\",\n      \"options\": [\n        { \"key\": \"a\", \"text\": \"Skip the tick; schedule the next attempt 60s after the in-flight one finishes\" },\n        { \"key\": \"b\", \"text\": \"Start a second request anyway; whichever finishes last wins\" },\n        { \"key\": \"c\", \"text\": \"Abort the in-flight request and start a fresh one\" }\n      ],\n      \"rec\": {\n        \"option\": \"a\",\n        \"why\": \"Skipping avoids out-of-order responses clobbering newer items with older ones and needs no abort plumbing.\"\n      }\n    },\n    {\n      \"id\": \"visibility\",\n      \"title\": \"Should the timer run while the tab is hidden?\",\n      \"body\": \"When the browser tab is in the background, should automatic re-fetches continue, pause, or catch up on return?\",\n      \"options\": [\n        { \"key\": \"a\", \"text\": \"Keep fetching every 60s regardless of visibility\" },\n        { \"key\": \"b\", \"text\": \"Pause while hidden; re-fetch immediately when the tab becomes visible again\" },\n        { \"key\": \"c\", \"text\": \"Pause while hidden; resume on the next tick without an immediate fetch\" }\n      ],\n      \"rec\": {\n        \"option\": \"b\",\n        \"why\": \"Polling a hidden tab wastes requests and can pile up error banners nobody sees, and an immediate fetch on return means the person lands on fresh items.\"\n      }\n    },\n    {\n      \"id\": \"loading-ui\",\n      \"title\": \"What does the UI show during a background re-fetch?\",\n      \"body\": \"Manual refresh presumably shows a loading state. Should an automatic re-fetch look the same?\",\n      \"options\": [\n        { \"key\": \"a\", \"text\": \"Same loading state as manual refresh (spinner, list reloads)\" },\n        { \"key\": \"b\", \"text\": \"Silent refresh: keep current items on screen, swap in the new list when it arrives\" },\n        { \"key\": \"c\", \"text\": \"Keep current items plus a subtle updating indicator\" }\n      ],\n      \"rec\": {\n        \"option\": \"b\",\n        \"why\": \"Blanking or spinning the list every 60 seconds fights the feature's goal of items quietly appearing; a silent swap is also the least new UI.\"\n      }\n    },\n    {\n      \"id\": \"confirm-shared\",\n      \"title\": \"Confirm shared understanding\",\n      \"body\": \"To confirm: while a feed is loaded — preset or custom — the app re-fetches exactly that feed every 60 seconds, ignoring any unsubmitted dropdown or custom-URL edits; new items appear without clicking Refresh; the interval, failure, overlap, visibility, and loading behavior are as settled in the cards above.\",\n      \"options\": [\n        { \"key\": \"a\", \"text\": \"Confirmed\" },\n        { \"key\": \"b\", \"text\": \"Not yet — something above needs to change\" }\n      ],\n      \"rec\": {\n        \"option\": \"a\",\n        \"why\": \"The statement only restates the feature and the settled cards.\"\n      }\n    }\n  ]\n}",
   "cards": [
     {
-      "id": "sort-default",
+      "id": "scope-feeds",
       "round": 1,
-      "title": "Initial sort state after a feed loads",
-      "body": "Today a loaded feed displays items in the order the server returned them. Once the toggle exists, which state is it in — and therefore which order does the list show — immediately after a successful load?",
+      "title": "Which feeds auto-refresh?",
+      "body": "The feature says the \"currently loaded feed\" re-fetches every 60 seconds. The glossary defines that as preset or custom. Does the timer apply to both, or only preset feeds?",
       "options": [
         {
           "key": "A",
-          "text": "Newest first — the toggle starts on 'Newest' and the loaded list is sorted by publication date right away"
+          "text": "Both preset and custom feeds"
         },
         {
           "key": "B",
-          "text": "Newest selected but list in feed order — the toggle shows 'Newest' while the display stays in server order until the user toggles"
+          "text": "Preset feeds only"
+        }
+      ],
+      "rec": {
+        "option": "A",
+        "why": "The glossary's \"currently loaded feed\" covers both kinds, and custom-feed readers want fresh items just as much; splitting the behavior adds a special case."
+      }
+    },
+    {
+      "id": "timer-reset",
+      "round": 1,
+      "title": "When does the 60-second interval restart?",
+      "body": "After which events does the next automatic re-fetch come a full 60 seconds later?",
+      "options": [
+        {
+          "key": "A",
+          "text": "Reset on every load and refresh, manual or automatic"
+        },
+        {
+          "key": "B",
+          "text": "Fixed wall-clock tick every 60s, unaffected by manual refresh"
         },
         {
           "key": "C",
-          "text": "Feed order until the first toggle — the list shows server order until the user picks a direction"
+          "text": "Reset only on manual actions, automatic refreshes don't reset it"
         }
       ],
       "rec": {
         "option": "A",
-        "why": "The toggle is the only control over order, so its displayed state must match what the list shows; a control claiming 'Newest' over feed order (b) would lie, and (c) leaves the toggle's meaning undefined until clicked. Police feeds are usually newest-first anyway, so (a) is typically a no-op on load and only changes the outcome for feeds that arrive out of order — exactly the case this feature targets."
+        "why": "A manual click already delivered fresh data, so counting the next auto-fetch from it avoids a pointless double fetch and keeps the cadence predictable."
       }
     },
     {
-      "id": "sort-reset-on-load",
+      "id": "error-handling",
       "round": 1,
-      "title": "Sort state across Load and Refresh",
-      "body": "loadFeed() already resets the search box on every successful load, and Refresh reloads the currently loaded feed. Does the toggle keep the user's chosen direction across a Refresh or a newly loaded feed, or reset to its default state like the search box?",
+      "title": "What happens when an automatic re-fetch fails?",
+      "body": "If the background re-fetch gets a network error, a non-200, or a 400 from the host guard, what should the app do?",
       "options": [
         {
           "key": "A",
-          "text": "Reset to the default direction on every successful load, like the search box"
+          "text": "Show the existing error banner and keep the timer running"
         },
         {
           "key": "B",
-          "text": "Keep the user's chosen direction across loads within the session"
-        }
-      ],
-      "rec": {
-        "option": "A",
-        "why": "The existing rule is that a fresh load shows the feed's full list in a fresh state; carrying a sort direction across loads would silently reorder a feed the user just swapped, and 'Refresh' would then show a different order than the same feed's first load."
-      }
-    },
-    {
-      "id": "missing-dates",
-      "round": 1,
-      "title": "Items without a parseable publication date",
-      "body": "The sort key is each item's pubDate. Some feeds omit pubDate or ship a string that cannot be parsed as a date. Where do such items land while 'Newest' or 'Oldest' is active?",
-      "options": [
-        {
-          "key": "A",
-          "text": "Always last in both directions, keeping their relative feed order among themselves"
-        },
-        {
-          "key": "B",
-          "text": "Treated as the oldest possible time, so they sink to the bottom under 'Newest' and rise to the top under 'Oldest'"
+          "text": "Show the banner and pause the timer until a manual refresh or new load restarts it"
         },
         {
           "key": "C",
-          "text": "Left out of the sorted list entirely"
-        }
-      ],
-      "rec": {
-        "option": "A",
-        "why": "An item must not vanish because its date is missing — (c) would hide content the item-count label still counts, breaking the count. (b) puts undated items above dated ones under 'Oldest', which reads as a false claim of recency; pinning them last in both directions keeps them reachable and never above a dated item."
-      }
-    },
-    {
-      "id": "tie-order",
-      "round": 1,
-      "title": "Items with identical timestamps",
-      "body": "When two loaded items carry the same publication date, which order do they display in under 'Newest' and under 'Oldest'?",
-      "options": [
-        {
-          "key": "A",
-          "text": "Their original feed order in both directions (stable sort)"
-        },
-        {
-          "key": "B",
-          "text": "Feed order under 'Newest', reversed feed order under 'Oldest'"
-        }
-      ],
-      "rec": {
-        "option": "A",
-        "why": "A stable sort makes the display predictable and keeps the two directions exact mirrors of each other; ties are common when a feed stamps the same day-level date on several reports, and flipping the toggle then reshuffling those tied items for no visible reason would look like a bug."
-      }
-    },
-    {
-      "id": "detail-on-resort",
-      "round": 1,
-      "title": "Open item detail when the direction flips",
-      "body": "The list renders indices into feedItems and selectedIndex points into that array. When the user flips the toggle while an item's detail (including a possibly still-loading AI summary) is open, what happens to that open detail?",
-      "options": [
-        {
-          "key": "A",
-          "text": "It stays open and moves with its item to the item's new position"
-        },
-        {
-          "key": "B",
-          "text": "It closes when the direction changes"
-        }
-      ],
-      "rec": {
-        "option": "A",
-        "why": "The feature states the open detail keeps working as today: like the search filter today, reordering the displayed indices does not change which item is selected, so closing it would be a regression and would discard an in-flight or completed analysis the user explicitly opened."
-      }
-    },
-    {
-      "id": "toggle-ui",
-      "round": 1,
-      "title": "Shape of the toggle control",
-      "body": "What control sits next to the feed search box to choose between Newest and Oldest?",
-      "options": [
-        {
-          "key": "A",
-          "text": "One two-state button showing the current direction ('Newest' or 'Oldest') that flips on click"
-        },
-        {
-          "key": "B",
-          "text": "A segmented pair of buttons, one per direction, with the active one visually marked (aria-pressed)"
-        },
-        {
-          "key": "C",
-          "text": "A dropdown select offering the two directions"
+          "text": "Silently keep the old items, no banner, keep the timer running"
         }
       ],
       "rec": {
         "option": "B",
-        "why": "Both options are visible at once, so the existence of the other order is discoverable without clicking, and the active state is declared rather than inferred; a flipping button (a) changes its own label on every click, and a dropdown (c) hides a two-value choice behind an extra interaction."
+        "why": "A dead feed would otherwise re-banner every 60 seconds; surfacing the failure once and stopping until the person acts keeps the error visible without spamming."
       }
     },
     {
-      "id": "toggle-visibility",
+      "id": "in-flight-overlap",
       "round": 1,
-      "title": "When the toggle is visible",
-      "body": "The search box renders only while a feed is loaded and has items (loadedFeed && feedItems.length). When should the sort toggle render?",
+      "title": "What if a re-fetch is still running at the next tick?",
+      "body": "A slow or hung request can still be in flight when 60 seconds have passed. What then?",
       "options": [
         {
           "key": "A",
-          "text": "Exactly with the search box — same condition, placed next to it"
+          "text": "Skip the tick; schedule the next attempt 60s after the in-flight one finishes"
         },
         {
           "key": "B",
-          "text": "Always visible, disabled while no feed with items is loaded"
+          "text": "Start a second request anyway; whichever finishes last wins"
+        },
+        {
+          "key": "C",
+          "text": "Abort the in-flight request and start a fresh one"
         }
       ],
       "rec": {
         "option": "A",
-        "why": "'Next to the feed search box' pins its place, and with zero loaded items there is nothing to reorder; an always-present but permanently dead control in the empty state adds noise without function."
+        "why": "Skipping avoids out-of-order responses clobbering newer items with older ones and needs no abort plumbing."
       }
     },
     {
-      "id": "confirm-shared-understanding",
+      "id": "visibility",
       "round": 1,
-      "title": "Confirmation of shared understanding",
-      "body": "The picture after this round: a two-option Newest/Oldest control next to the feed search box, visible whenever the search box is, reorders only the currently loaded feed's already-loaded items client-side by publication date — no refetch. The active search filter keeps filtering and the count label keeps counting; an open detail stays open and follows its item. Undated items sort last in both directions, ties keep feed order, the sort is stable, and every successful load (Load or Refresh) resets the toggle to its default direction. Confirm this as the shared understanding to take into the Spec?",
+      "title": "Should the timer run while the tab is hidden?",
+      "body": "When the browser tab is in the background, should automatic re-fetches continue, pause, or catch up on return?",
       "options": [
         {
           "key": "A",
-          "text": "Yes — confirmed as stated"
+          "text": "Keep fetching every 60s regardless of visibility"
         },
         {
           "key": "B",
-          "text": "No — I will correct it in a note"
+          "text": "Pause while hidden; re-fetch immediately when the tab becomes visible again"
+        },
+        {
+          "key": "C",
+          "text": "Pause while hidden; resume on the next tick without an immediate fetch"
+        }
+      ],
+      "rec": {
+        "option": "B",
+        "why": "Polling a hidden tab wastes requests and can pile up error banners nobody sees, and an immediate fetch on return means the person lands on fresh items."
+      }
+    },
+    {
+      "id": "loading-ui",
+      "round": 1,
+      "title": "What does the UI show during a background re-fetch?",
+      "body": "Manual refresh presumably shows a loading state. Should an automatic re-fetch look the same?",
+      "options": [
+        {
+          "key": "A",
+          "text": "Same loading state as manual refresh (spinner, list reloads)"
+        },
+        {
+          "key": "B",
+          "text": "Silent refresh: keep current items on screen, swap in the new list when it arrives"
+        },
+        {
+          "key": "C",
+          "text": "Keep current items plus a subtle updating indicator"
+        }
+      ],
+      "rec": {
+        "option": "B",
+        "why": "Blanking or spinning the list every 60 seconds fights the feature's goal of items quietly appearing; a silent swap is also the least new UI."
+      }
+    },
+    {
+      "id": "confirm-shared",
+      "round": 1,
+      "title": "Confirm shared understanding",
+      "body": "To confirm: while a feed is loaded — preset or custom — the app re-fetches exactly that feed every 60 seconds, ignoring any unsubmitted dropdown or custom-URL edits; new items appear without clicking Refresh; the interval, failure, overlap, visibility, and loading behavior are as settled in the cards above.",
+      "options": [
+        {
+          "key": "A",
+          "text": "Confirmed"
+        },
+        {
+          "key": "B",
+          "text": "Not yet — something above needs to change"
         }
       ],
       "rec": {
         "option": "A",
-        "why": "This restates exactly what the round's answers pin down; confirming it ends the Grill and lets the Spec be written from a settled picture."
+        "why": "The statement only restates the feature and the settled cards."
       }
     }
   ]
