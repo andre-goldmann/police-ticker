@@ -1592,6 +1592,21 @@ describe('RssFeedComponent auto-refresh of the loaded feed', () => {
     fixture.detectChanges();
   }
 
+  function openDetailAt(index: number) {
+    const link = fixture.nativeElement.querySelectorAll('ul.feed-items a.feed-title')[
+      index
+    ] as HTMLElement;
+    link.click();
+    fixture.detectChanges();
+    http
+      .expectOne({ method: 'POST', url: '/api/openrouter-chat' })
+      .flush({ choices: [{ message: { content: 'analysis' } }] });
+    http
+      .expectOne({ method: 'POST', url: '/api/analyze-rss-feed' })
+      .flush({ choices: [{ message: { content: '{"summary":"ok"}' } }] });
+    fixture.detectChanges();
+  }
+
   function displayPresetFeed(feed: PoliceFeed) {
     flushPoliceFeeds();
     component.selectedFeed = feed;
@@ -1670,6 +1685,44 @@ describe('RssFeedComponent auto-refresh of the loaded feed', () => {
     expect(component.loading).toBe(false);
     expect(fixture.nativeElement.querySelector('.loading')).toBeNull();
     expect(renderedItemCount()).toBe(5);
+
+    fixture.destroy();
+  }));
+
+  it('keeps the open detail pinned to its item when a silent swap reorders the list', fakeAsync(() => {
+    displayCustomFeed();
+
+    openDetailAt(1);
+    expect(component.selectedIndex).toBe(1);
+
+    tick(60_000);
+    // The same two items arrive in reverse order: "Item 2" moves to index 0.
+    http.expectOne(CUSTOM_REQUEST).flush(feedItems(2).slice().reverse());
+    fixture.detectChanges();
+
+    expect(component.selectedIndex).toBe(0);
+    const details = fixture.nativeElement.querySelectorAll('.details');
+    expect(details.length).toBe(1);
+    expect(details[0].closest('li').textContent).toContain('Item 2');
+    expect(details[0].querySelector('.description').textContent).toContain('Description 2');
+
+    fixture.destroy();
+  }));
+
+  it('closes the open detail when a silent swap no longer contains its item', fakeAsync(() => {
+    displayCustomFeed();
+
+    openDetailAt(1);
+    expect(component.selectedIndex).toBe(1);
+
+    tick(60_000);
+    // The swap drops "Item 2" entirely.
+    http.expectOne(CUSTOM_REQUEST).flush(feedItems(1));
+    fixture.detectChanges();
+
+    expect(component.selectedIndex).toBeNull();
+    expect(fixture.nativeElement.querySelector('.details')).toBeNull();
+    expect(renderedItemCount()).toBe(1);
 
     fixture.destroy();
   }));
@@ -1755,6 +1808,39 @@ describe('RssFeedComponent auto-refresh of the loaded feed', () => {
     fixture.detectChanges();
 
     expect(errorText()).toBe('');
+
+    tick(59_000);
+    http.expectNone(CUSTOM_REQUEST);
+
+    tick(1_000);
+    http.expectOne(CUSTOM_REQUEST).flush(feedItems(3));
+
+    fixture.destroy();
+  }));
+
+  it('does not catch up on visibility after a failed automatic re-fetch until a manual refresh', fakeAsync(() => {
+    displayCustomFeed();
+
+    tick(60_000);
+    http.expectOne(CUSTOM_REQUEST).flush(
+      { error: 'Upstream feed is unavailable' },
+      { status: 502, statusText: 'Bad Gateway' },
+    );
+    fixture.detectChanges();
+
+    expect(errorText()).toBe('Upstream feed is unavailable');
+    expect(renderedItemCount()).toBe(2);
+
+    // A hide/show cycle must not fire an automatic re-fetch or restart the timer.
+    setVisibility('hidden');
+    tick(120_000);
+    setVisibility('visible');
+    http.expectNone((request) => request.url.includes('/api/custom-rss'));
+
+    // Only a manual refresh restores the 60-second cadence.
+    clickRefresh();
+    http.expectOne(CUSTOM_REQUEST).flush(feedItems(3));
+    fixture.detectChanges();
 
     tick(59_000);
     http.expectNone(CUSTOM_REQUEST);

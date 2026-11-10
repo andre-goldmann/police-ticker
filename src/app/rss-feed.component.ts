@@ -28,6 +28,11 @@ function isValidHttpUrl(value: string): boolean {
   }
 }
 
+/** Stable identity of a feed item across fetches: its link, else its title. */
+function feedItemKey(item: any): string {
+  return item?.link || item?.title || '';
+}
+
 @Component({
   selector: 'app-rss-feed',
   standalone: true,
@@ -63,6 +68,11 @@ export class RssFeedComponent implements OnInit, OnDestroy {
   private autoRefreshTimer: ReturnType<typeof setTimeout> | null = null;
   /** Automatic re-fetch currently in flight, if any. */
   private autoRefreshSubscription: Subscription | null = null;
+  /**
+   * Set when a failed automatic re-fetch stops the cadence; cleared by the
+   * next manual load or refresh, which restarts the interval.
+   */
+  private autoRefreshStopped = false;
   defaultFeed: PoliceFeed = {
     name: 'Polizei Sachsen',
     url: 'https://www.polizei.sachsen.de/de/presse_rss_pdl.xml',
@@ -229,11 +239,16 @@ export class RssFeedComponent implements OnInit, OnDestroy {
   /**
    * While the tab is hidden the pending re-fetch tick is dropped; when the tab
    * becomes visible again the currently loaded feed is re-fetched immediately
-   * and the cadence continues from that catch-up.
+   * and the cadence continues from that catch-up. A cadence stopped by a
+   * failed automatic re-fetch stays stopped — only a manual load or refresh
+   * restarts it.
    */
   private readonly onVisibilityChange = () => {
     if (this.document.visibilityState === 'hidden') {
       this.clearAutoRefreshTimer();
+      return;
+    }
+    if (this.autoRefreshStopped) {
       return;
     }
     this.onAutoRefreshTick();
@@ -243,10 +258,14 @@ export class RssFeedComponent implements OnInit, OnDestroy {
    * Fires when the automatic re-fetch interval elapses: re-fetches the
    * currently loaded feed only — never the dropdown selection or the custom
    * URL field text — and skips the tick while nothing is loaded, the tab is
-   * hidden, or a re-fetch is still in flight.
+   * hidden, a re-fetch is still in flight, or the cadence has stopped after a
+   * failed automatic re-fetch.
    */
   private onAutoRefreshTick() {
     this.autoRefreshTimer = null;
+    if (this.autoRefreshStopped) {
+      return;
+    }
     if (this.document.visibilityState === 'hidden') {
       return;
     }
@@ -287,6 +306,20 @@ export class RssFeedComponent implements OnInit, OnDestroy {
     }
   }
 
+  /**
+   * Keep an open detail on its item across a silent swap: the fetched list
+   * holds fresh objects, so the selection is relocated to the matching item
+   * and closes when that item is gone from the feed.
+   */
+  private relocateSelectedIndex(selected: any) {
+    if (!selected) {
+      return;
+    }
+    const key = feedItemKey(selected);
+    const relocated = this.feedItems.findIndex((item) => feedItemKey(item) === key);
+    this.selectedIndex = relocated === -1 ? null : relocated;
+  }
+
   private loadFeed(feedUrl: string, customUrl?: string, options?: { silent?: boolean }) {
     const silent = options?.silent === true;
     const kind: 'preset' | 'custom' = customUrl ? 'custom' : 'preset';
@@ -294,6 +327,7 @@ export class RssFeedComponent implements OnInit, OnDestroy {
       // A manual load or refresh cancels the scheduled automatic re-fetch and
       // any re-fetch still in flight; its own success restarts the interval.
       this.stopAutoRefresh();
+      this.autoRefreshStopped = false;
       this.loading = true;
       this.error = null;
       this.feedItems = [];
@@ -308,6 +342,10 @@ export class RssFeedComponent implements OnInit, OnDestroy {
 
     const subscription = this.http.get<any[]>(endpoint).subscribe({
       next: (items) => {
+        // A silent swap relocates the open detail to its item in the new
+        // list, so capture the selected item before `feedItems` is replaced.
+        const selected =
+          silent && this.selectedIndex !== null ? this.feedItems[this.selectedIndex] : null;
         if (customUrl) {
           this.feedItems = items.slice(0, MAX_CUSTOM_FEED_ITEMS);
           this.selectedFeed = {
@@ -321,7 +359,10 @@ export class RssFeedComponent implements OnInit, OnDestroy {
         if (silent) {
           // An automatic re-fetch swaps the items in place; the manual loading
           // state, the search query, the sort direction, and any open detail
-          // stay as they are.
+          // stay as they are — the detail follows its item and closes when the
+          // item is gone from the feed. A stale failure banner is cleared.
+          this.error = null;
+          this.relocateSelectedIndex(selected);
           this.autoRefreshSubscription = null;
         } else {
           this.loadedFeed = { url: feedUrl, kind };
@@ -338,7 +379,9 @@ export class RssFeedComponent implements OnInit, OnDestroy {
         this.error = err?.error?.error || 'Failed to load RSS feed.';
         if (silent) {
           // A failed automatic re-fetch shows the banner once and stops the
-          // timer; only a manual refresh or a new load restarts it.
+          // timer — including the visibility catch-up; only a manual refresh
+          // or a new load restarts it.
+          this.autoRefreshStopped = true;
           this.autoRefreshSubscription = null;
           this.clearAutoRefreshTimer();
           return;
