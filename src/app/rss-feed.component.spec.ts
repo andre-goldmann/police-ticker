@@ -1,4 +1,4 @@
-import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { ComponentFixture, TestBed, fakeAsync, tick } from '@angular/core/testing';
 import { HttpClientModule, provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 
@@ -1527,4 +1527,406 @@ describe('RssFeedComponent feed sort', () => {
       expect(fixture.nativeElement.querySelector('.sort-toggle')).toBeNull();
     });
   });
+});
+
+describe('RssFeedComponent auto-refresh of the loaded feed', () => {
+  let fixture: ComponentFixture<RssFeedComponent>;
+  let component: RssFeedComponent;
+  let http: HttpTestingController;
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [RssFeedComponent],
+      providers: [provideHttpClient(), provideHttpClientTesting()],
+    })
+      // The test provides its own HttpClient so requests are intercepted.
+      .overrideComponent(RssFeedComponent, {
+        remove: { imports: [HttpClientModule] },
+      })
+      .compileComponents();
+
+    fixture = TestBed.createComponent(RssFeedComponent);
+    component = fixture.componentInstance;
+    http = TestBed.inject(HttpTestingController);
+    fixture.detectChanges();
+  });
+
+  afterEach(() => http.verify());
+
+  // Restore the real visibilityState after a test replaced it.
+  afterEach(() => {
+    delete (document as unknown as Record<string, unknown>)['visibilityState'];
+  });
+
+  function flushPoliceFeeds() {
+    http.expectOne('/api/german-police-feeds').flush(PRESET_FEEDS);
+    fixture.detectChanges();
+  }
+
+  function setCustomUrl(value: string) {
+    const input: HTMLInputElement = fixture.nativeElement.querySelector(
+      'input[name="customFeedUrl"]',
+    );
+    input.value = value;
+    input.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+  }
+
+  function submit() {
+    const form: HTMLFormElement = fixture.nativeElement.querySelector('form.input-row');
+    form.dispatchEvent(new Event('submit'));
+    fixture.detectChanges();
+  }
+
+  function errorText(): string {
+    const element = fixture.nativeElement.querySelector('.error');
+    return element ? element.textContent.trim() : '';
+  }
+
+  function presetRequest(feed: PoliceFeed): string {
+    return `/api/custom-rss?url=${encodeURIComponent(feed.url)}`;
+  }
+
+  function clickRefresh() {
+    fixture.nativeElement.querySelector('button.refresh-feed').click();
+    fixture.detectChanges();
+  }
+
+  function openDetailAt(index: number) {
+    const link = fixture.nativeElement.querySelectorAll('ul.feed-items a.feed-title')[
+      index
+    ] as HTMLElement;
+    link.click();
+    fixture.detectChanges();
+    http
+      .expectOne({ method: 'POST', url: '/api/openrouter-chat' })
+      .flush({ choices: [{ message: { content: 'analysis' } }] });
+    http
+      .expectOne({ method: 'POST', url: '/api/analyze-rss-feed' })
+      .flush({ choices: [{ message: { content: '{"summary":"ok"}' } }] });
+    fixture.detectChanges();
+  }
+
+  function displayPresetFeed(feed: PoliceFeed) {
+    flushPoliceFeeds();
+    component.selectedFeed = feed;
+    setCustomUrl('');
+    submit();
+    http.expectOne(presetRequest(feed)).flush(TWO_ITEMS);
+    fixture.detectChanges();
+  }
+
+  function displayCustomFeed(items: FeedItem[] = TWO_ITEMS) {
+    flushPoliceFeeds();
+    setCustomUrl(CUSTOM_URL);
+    submit();
+    http.expectOne(CUSTOM_REQUEST).flush(items);
+    fixture.detectChanges();
+  }
+
+  function renderedItemCount(): number {
+    return fixture.nativeElement.querySelectorAll('ul.feed-items li').length;
+  }
+
+  function setVisibility(state: 'hidden' | 'visible') {
+    Object.defineProperty(document, 'visibilityState', { configurable: true, value: state });
+    document.dispatchEvent(new Event('visibilitychange'));
+    fixture.detectChanges();
+  }
+
+  it('re-fetches the loaded preset feed once after 60 seconds and swaps the returned items in', fakeAsync(() => {
+    displayPresetFeed(PRESET_FEEDS[0]);
+
+    tick(60_000);
+
+    const request = http.expectOne(presetRequest(PRESET_FEEDS[0]));
+    expect(request.request.method).toBe('GET');
+    request.flush(feedItems(3));
+    fixture.detectChanges();
+
+    expect(renderedItemCount()).toBe(3);
+    expect(fixture.nativeElement.querySelectorAll('ul.feed-items li')[2].textContent).toMatch(
+      /Item 3/,
+    );
+    http.expectNone(presetRequest(PRESET_FEEDS[0]));
+
+    fixture.destroy();
+  }));
+
+  it('re-fetches the loaded custom feed once after 60 seconds with the pasted URL', fakeAsync(() => {
+    displayCustomFeed();
+
+    tick(60_000);
+
+    const request = http.expectOne(CUSTOM_REQUEST);
+    expect(request.request.urlWithParams).toContain(encodeURIComponent(CUSTOM_URL));
+    request.flush(feedItems(4));
+    fixture.detectChanges();
+
+    expect(renderedItemCount()).toBe(4);
+    expect(component.loadedFeed).toEqual({ url: CUSTOM_URL, kind: 'custom' });
+
+    fixture.destroy();
+  }));
+
+  it('re-fetches silently: the manual loading state stays off and the previous items stay until the swap', fakeAsync(() => {
+    displayCustomFeed();
+
+    tick(60_000);
+
+    const request = http.expectOne(CUSTOM_REQUEST);
+    expect(component.loading).toBe(false);
+    expect(fixture.nativeElement.querySelector('.loading')).toBeNull();
+    expect(renderedItemCount()).toBe(2);
+
+    request.flush(feedItems(5));
+    fixture.detectChanges();
+
+    expect(component.loading).toBe(false);
+    expect(fixture.nativeElement.querySelector('.loading')).toBeNull();
+    expect(renderedItemCount()).toBe(5);
+
+    fixture.destroy();
+  }));
+
+  it('keeps the open detail pinned to its item when a silent swap reorders the list', fakeAsync(() => {
+    displayCustomFeed();
+
+    openDetailAt(1);
+    expect(component.selectedIndex).toBe(1);
+
+    tick(60_000);
+    // The same two items arrive in reverse order: "Item 2" moves to index 0.
+    http.expectOne(CUSTOM_REQUEST).flush(feedItems(2).slice().reverse());
+    fixture.detectChanges();
+
+    expect(component.selectedIndex).toBe(0);
+    const details = fixture.nativeElement.querySelectorAll('.details');
+    expect(details.length).toBe(1);
+    expect(details[0].closest('li').textContent).toContain('Item 2');
+    expect(details[0].querySelector('.description').textContent).toContain('Description 2');
+
+    fixture.destroy();
+  }));
+
+  it('closes the open detail when a silent swap no longer contains its item', fakeAsync(() => {
+    displayCustomFeed();
+
+    openDetailAt(1);
+    expect(component.selectedIndex).toBe(1);
+
+    tick(60_000);
+    // The swap drops "Item 2" entirely.
+    http.expectOne(CUSTOM_REQUEST).flush(feedItems(1));
+    fixture.detectChanges();
+
+    expect(component.selectedIndex).toBeNull();
+    expect(fixture.nativeElement.querySelector('.details')).toBeNull();
+    expect(renderedItemCount()).toBe(1);
+
+    fixture.destroy();
+  }));
+
+  it('restarts the 60-second interval when the feed is manually refreshed or reloaded', fakeAsync(() => {
+    displayPresetFeed(PRESET_FEEDS[0]);
+
+    tick(30_000);
+
+    clickRefresh();
+    http.expectOne(presetRequest(PRESET_FEEDS[0])).flush(TWO_ITEMS);
+    fixture.detectChanges();
+
+    // 59 seconds after the manual refresh nothing fires yet...
+    tick(59_000);
+    http.expectNone(presetRequest(PRESET_FEEDS[0]));
+
+    // ...but one second later the interval elapses exactly.
+    tick(1_000);
+    http.expectOne(presetRequest(PRESET_FEEDS[0])).flush(TWO_ITEMS);
+    fixture.detectChanges();
+
+    // A manual load restarts the interval the same way.
+    component.selectedFeed = PRESET_FEEDS[1];
+    fixture.detectChanges();
+    submit();
+    http.expectOne(presetRequest(PRESET_FEEDS[1])).flush(TWO_ITEMS);
+    fixture.detectChanges();
+
+    tick(59_000);
+    http.expectNone(presetRequest(PRESET_FEEDS[1]));
+
+    tick(1_000);
+    http.expectOne(presetRequest(PRESET_FEEDS[1])).flush(TWO_ITEMS);
+
+    fixture.destroy();
+  }));
+
+  it('schedules the next re-fetch 60 seconds after the previous one completed, not on a fixed tick', fakeAsync(() => {
+    displayPresetFeed(PRESET_FEEDS[0]);
+
+    tick(60_000);
+    const request = http.expectOne(presetRequest(PRESET_FEEDS[0]));
+
+    // The response arrives late: the tick scheduled at the re-fetch start
+    // fires while it is still in flight and is skipped.
+    tick(60_000);
+    http.expectNone(presetRequest(PRESET_FEEDS[0]));
+
+    request.flush(TWO_ITEMS);
+    fixture.detectChanges();
+
+    // The next attempt fires 60 seconds after that late completion.
+    tick(59_000);
+    http.expectNone(presetRequest(PRESET_FEEDS[0]));
+
+    tick(1_000);
+    http.expectOne(presetRequest(PRESET_FEEDS[0])).flush(TWO_ITEMS);
+
+    fixture.destroy();
+  }));
+
+  it('stops automatic re-fetches once one fails, keeps the items, and restores the cadence on manual refresh', fakeAsync(() => {
+    displayCustomFeed();
+
+    tick(60_000);
+    http.expectOne(CUSTOM_REQUEST).flush(
+      { error: 'Upstream feed is unavailable' },
+      { status: 502, statusText: 'Bad Gateway' },
+    );
+    fixture.detectChanges();
+
+    expect(errorText()).toBe('Upstream feed is unavailable');
+    expect(renderedItemCount()).toBe(2);
+
+    // No further automatic requests after the failure.
+    tick(120_000);
+    http.expectNone((request) => request.url.includes('/api/custom-rss'));
+
+    // A manual refresh works and restores the 60-second cadence.
+    clickRefresh();
+    http.expectOne(CUSTOM_REQUEST).flush(feedItems(3));
+    fixture.detectChanges();
+
+    expect(errorText()).toBe('');
+
+    tick(59_000);
+    http.expectNone(CUSTOM_REQUEST);
+
+    tick(1_000);
+    http.expectOne(CUSTOM_REQUEST).flush(feedItems(3));
+
+    fixture.destroy();
+  }));
+
+  it('does not catch up on visibility after a failed automatic re-fetch until a manual refresh', fakeAsync(() => {
+    displayCustomFeed();
+
+    tick(60_000);
+    http.expectOne(CUSTOM_REQUEST).flush(
+      { error: 'Upstream feed is unavailable' },
+      { status: 502, statusText: 'Bad Gateway' },
+    );
+    fixture.detectChanges();
+
+    expect(errorText()).toBe('Upstream feed is unavailable');
+    expect(renderedItemCount()).toBe(2);
+
+    // A hide/show cycle must not fire an automatic re-fetch or restart the timer.
+    setVisibility('hidden');
+    tick(120_000);
+    setVisibility('visible');
+    http.expectNone((request) => request.url.includes('/api/custom-rss'));
+
+    // Only a manual refresh restores the 60-second cadence.
+    clickRefresh();
+    http.expectOne(CUSTOM_REQUEST).flush(feedItems(3));
+    fixture.detectChanges();
+
+    tick(59_000);
+    http.expectNone(CUSTOM_REQUEST);
+
+    tick(1_000);
+    http.expectOne(CUSTOM_REQUEST).flush(feedItems(3));
+
+    fixture.destroy();
+  }));
+
+  it('skips a tick that fires while a re-fetch is in flight and schedules the next attempt 60 seconds after it finishes', fakeAsync(() => {
+    displayPresetFeed(PRESET_FEEDS[0]);
+
+    tick(60_000);
+    const inFlight = http.expectOne(presetRequest(PRESET_FEEDS[0]));
+
+    // The next tick fires while the re-fetch above is still in flight.
+    tick(60_000);
+    http.expectNone(presetRequest(PRESET_FEEDS[0]));
+
+    inFlight.flush(feedItems(4));
+    fixture.detectChanges();
+    expect(renderedItemCount()).toBe(4);
+
+    // No second concurrent request was started, and the next attempt fires
+    // 60 seconds after the in-flight re-fetch finished.
+    tick(59_000);
+    http.expectNone(presetRequest(PRESET_FEEDS[0]));
+
+    tick(1_000);
+    http.expectOne(presetRequest(PRESET_FEEDS[0])).flush(feedItems(4));
+
+    fixture.destroy();
+  }));
+
+  it('makes no automatic requests while the tab is hidden and re-fetches once as soon as it is visible again', fakeAsync(() => {
+    displayPresetFeed(PRESET_FEEDS[0]);
+
+    setVisibility('hidden');
+
+    tick(180_000);
+    http.expectNone((request) => request.url.includes('/api/custom-rss'));
+
+    setVisibility('visible');
+
+    const request = http.expectOne(presetRequest(PRESET_FEEDS[0]));
+    request.flush(feedItems(3));
+    fixture.detectChanges();
+    expect(renderedItemCount()).toBe(3);
+
+    // The cadence continues from the catch-up re-fetch.
+    tick(59_000);
+    http.expectNone(presetRequest(PRESET_FEEDS[0]));
+
+    tick(1_000);
+    http.expectOne(presetRequest(PRESET_FEEDS[0])).flush(feedItems(3));
+
+    fixture.destroy();
+  }));
+
+  it('always re-fetches the currently loaded feed, ignoring unsubmitted dropdown and URL field edits', fakeAsync(() => {
+    displayPresetFeed(PRESET_FEEDS[0]);
+
+    component.selectedFeed = PRESET_FEEDS[1];
+    setCustomUrl('https://other.example.net/rss.xml');
+    fixture.detectChanges();
+    expect(component.loadedFeed).toEqual({ url: PRESET_FEEDS[0].url, kind: 'preset' });
+
+    tick(60_000);
+
+    const request = http.expectOne(presetRequest(PRESET_FEEDS[0]));
+    http.expectNone(presetRequest(PRESET_FEEDS[1]));
+    http.expectNone(
+      `/api/custom-rss?url=${encodeURIComponent('https://other.example.net/rss.xml')}`,
+    );
+    request.flush(TWO_ITEMS);
+
+    fixture.destroy();
+  }));
+
+  it('sends no automatic request while no feed is loaded', fakeAsync(() => {
+    flushPoliceFeeds();
+
+    tick(120_000);
+
+    http.expectNone((request) => request.url.includes('/api/custom-rss'));
+    expect(fixture.nativeElement.querySelector('.empty')).not.toBeNull();
+  }));
 });
